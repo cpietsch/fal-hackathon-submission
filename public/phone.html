@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+<title>Blocking — camera</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='6' fill='%23e5484d'/%3E%3C/svg%3E" />
+<style>
+  :root { --bg:#101216; --panel:#191c22; --line:#2b3039; --text:#d7dae0; --dim:#8b919c; --accent:#e8a33d; --rec:#e5484d; --ok:#46a758; }
+  * { box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent; }
+  html,body { height:100%; }
+  body { background:var(--bg); color:var(--text); font:15px/1.5 system-ui,sans-serif; user-select:none; overflow:hidden; }
+  #home { height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:18px; padding:24px; text-align:center; }
+  .wordmark { font-weight:700; letter-spacing:.14em; font-size:18px; }
+  .wordmark span { color:var(--accent); }
+  #status { color:var(--dim); font-size:13px; min-height:40px; }
+  #startBtn {
+    width:170px; height:170px; border-radius:50%; border:3px solid var(--accent);
+    background:radial-gradient(circle at 35% 30%, #262b34, #14161b);
+    color:var(--accent); font-size:17px; font-weight:700; letter-spacing:.06em;
+  }
+  #startBtn:active { transform:scale(.97); }
+  #fallbackBtn { background:none; border:1px solid var(--line); color:var(--dim); border-radius:8px; padding:8px 14px; font:inherit; }
+  /* AR overlay */
+  #overlay { position:fixed; inset:0; display:none; pointer-events:none; }
+  #overlay.on { display:block; }
+  #overlay .hud { position:absolute; top:14px; left:0; right:0; text-align:center; font-size:13px; color:#fff; text-shadow:0 1px 3px #000a; }
+  #overlay .row { position:absolute; bottom:34px; left:0; right:0; display:flex; justify-content:center; align-items:center; gap:26px; pointer-events:none; }
+  #overlay button { pointer-events:auto; }
+  #recTgl {
+    width:84px; height:84px; border-radius:50%; border:4px solid #fff; background:rgba(20,22,27,.55);
+    display:grid; place-items:center;
+  }
+  #recTgl i { width:30px; height:30px; border-radius:50%; background:var(--rec); transition:border-radius .15s; }
+  #recTgl.rec i { border-radius:6px; }
+  .side { width:64px; height:64px; border-radius:50%; border:2px solid #fff9; background:rgba(20,22,27,.55); color:#fff; font-size:11px; }
+  #recDot { display:none; position:absolute; top:16px; right:18px; width:14px; height:14px; border-radius:50%; background:var(--rec); box-shadow:0 0 12px var(--rec); animation:blink 1s infinite; }
+  #overlay.rec #recDot { display:block; }
+  @keyframes blink { 50% { opacity:.25; } }
+</style>
+<script type="importmap">
+  { "imports": { "three": "/vendor/three/build/three.module.js" } }
+</script>
+</head>
+<body>
+  <div id="home">
+    <div class="wordmark">BLOCK<span>ING</span></div>
+    <div>You are the camera.<br/>Stand at your mark, then roll.</div>
+    <button id="startBtn">START<br/>CAMERA</button>
+    <div id="status">connecting…</div>
+    <button id="fallbackBtn">rotation-only mode (no AR)</button>
+  </div>
+
+  <div id="overlay">
+    <div class="hud" id="hudText">streaming</div>
+    <div id="recDot"></div>
+    <div class="row">
+      <button class="side" id="zeroBtn">RE-ZERO</button>
+      <button id="recTgl"><i></i></button>
+      <button class="side" id="endBtn">END</button>
+    </div>
+  </div>
+
+<script type="module">
+import * as THREE from 'three'
+
+const statusEl = document.getElementById('status')
+const overlay = document.getElementById('overlay')
+const hudText = document.getElementById('hudText')
+
+// ---- WebSocket
+let sock = null
+let open = false
+function connect() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws'
+  sock = new WebSocket(proto + '://' + location.host + '/ws')
+  sock.onopen = () => { open = true; sock.send(JSON.stringify({ type: 'hello', role: 'camera' })); setStatus() }
+  sock.onclose = () => { open = false; setStatus(); setTimeout(connect, 1500) }
+  sock.onmessage = (ev) => {
+    let m; try { m = JSON.parse(ev.data) } catch { return }
+    if (m.type === 'recState') setRec(m.on)
+    if (m.type === 'presence') setStatus(m.roles.includes('director'))
+  }
+}
+connect()
+function send(obj) { if (open) sock.send(JSON.stringify(obj)) }
+function setStatus(director) {
+  if (!open) { statusEl.textContent = 'connecting to director…'; return }
+  statusEl.textContent = director === false
+    ? 'connected — waiting for the director screen'
+    : (window.isSecureContext ? 'connected · ready' : 'connected — ⚠ not a secure context, AR will fail (use https)')
+}
+
+// ---- recording indicator (state lives on the director)
+let rec = false
+function setRec(on) {
+  rec = on
+  overlay.classList.toggle('rec', on)
+  document.getElementById('recTgl').classList.toggle('rec', on)
+  hudText.textContent = on ? '● REC' : 'streaming'
+  navigator.vibrate?.(on ? [60, 40, 60] : 60)
+}
+document.getElementById('recTgl').onclick = () => send({ type: 'record', on: !rec })
+document.getElementById('zeroBtn').onclick = () => { send({ type: 'rezero' }); navigator.vibrate?.(30) }
+
+// ---- WebXR 6DoF streaming
+const renderer = new THREE.WebGLRenderer({ alpha: true })
+renderer.xr.enabled = true
+let xrSession = null
+
+document.getElementById('startBtn').onclick = async () => {
+  if (!navigator.xr) return alert('WebXR not available. Use Chrome on Android over https.')
+  try {
+    xrSession = await navigator.xr.requestSession('immersive-ar', {
+      requiredFeatures: ['local-floor'],
+      optionalFeatures: ['dom-overlay'],
+      domOverlay: { root: overlay },
+    })
+  } catch (err) {
+    return alert('AR session failed: ' + err.message + '\nIs this a secure context (https)?')
+  }
+  overlay.classList.add('on')
+  renderer.xr.setReferenceSpaceType('local-floor')
+  await renderer.xr.setSession(xrSession)
+  send({ type: 'rezero' }) // fresh session ⇒ fresh origin on the director
+  let lastSend = 0
+  renderer.setAnimationLoop((_t, frame) => {
+    if (!frame) return
+    const space = renderer.xr.getReferenceSpace()
+    const pose = frame.getViewerPose(space)
+    if (!pose) return
+    const now = performance.now()
+    if (now - lastSend < 15) return // ~66Hz cap
+    lastSend = now
+    const { position: p, orientation: o } = pose.transform
+    send({ type: 'pose', p: [r3(p.x), r3(p.y), r3(p.z)], q: [r4(o.x), r4(o.y), r4(o.z), r4(o.w)], t: now })
+  })
+  xrSession.addEventListener('end', () => {
+    overlay.classList.remove('on')
+    renderer.setAnimationLoop(null)
+    xrSession = null
+  })
+}
+document.getElementById('endBtn').onclick = () => xrSession?.end()
+const r3 = (v) => Math.round(v * 1000) / 1000
+const r4 = (v) => Math.round(v * 10000) / 10000
+
+// ---- rotation-only fallback (DeviceOrientation, position fixed at the mark)
+document.getElementById('fallbackBtn').onclick = async () => {
+  if (typeof DeviceOrientationEvent !== 'undefined' && DeviceOrientationEvent.requestPermission) {
+    try { await DeviceOrientationEvent.requestPermission() } catch { /* denied */ }
+  }
+  overlay.classList.add('on')
+  hudText.textContent = 'rotation-only'
+  send({ type: 'rezero' })
+  const zee = new THREE.Vector3(0, 0, 1)
+  const euler = new THREE.Euler()
+  const q0 = new THREE.Quaternion(-Math.sqrt(0.5), 0, 0, Math.sqrt(0.5)) // camera looks out the back
+  const q = new THREE.Quaternion()
+  let lastSend = 0
+  addEventListener('deviceorientation', (e) => {
+    const now = performance.now()
+    if (now - lastSend < 33 || e.alpha === null) return
+    lastSend = now
+    const alpha = THREE.MathUtils.degToRad(e.alpha)
+    const beta = THREE.MathUtils.degToRad(e.beta)
+    const gamma = THREE.MathUtils.degToRad(e.gamma)
+    const orient = THREE.MathUtils.degToRad(screen.orientation?.angle || 0)
+    euler.set(beta, alpha, -gamma, 'YXZ')
+    q.setFromEuler(euler)
+    q.multiply(q0)
+    q.multiply(new THREE.Quaternion().setFromAxisAngle(zee, -orient))
+    send({ type: 'pose', p: [0, 1.6, 0], q: [r4(q.x), r4(q.y), r4(q.z), r4(q.w)], t: now })
+  })
+}
+</script>
+</body>
+</html>
