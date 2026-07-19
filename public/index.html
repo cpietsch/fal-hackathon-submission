@@ -28,9 +28,16 @@
   .wordmark { font-weight: 700; letter-spacing: .14em; font-size: 14px; }
   .wordmark span { color: var(--accent); }
   .tag { color: var(--dim); font-size: 11px; margin-right: auto; }
-  .dot { width: 8px; height: 8px; border-radius: 50%; background: #555; display: inline-block; margin-right: 5px; vertical-align: 1px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: #555; display: inline-block; flex: none; }
   .dot.on { background: var(--ok); }
-  .stat { color: var(--dim); font-size: 12px; }
+  .statTgl {
+    display: flex; align-items: center; gap: 7px;
+    background: rgba(255,255,255,.04); border-radius: 999px;
+    padding: 5px 12px; font-size: 12px; color: var(--dim);
+  }
+  .statTgl .st { font-size: 11px; color: #6b7280; }
+  .statTgl.on { color: var(--text); }
+  .statTgl.on .st { color: var(--ok); }
 
   button {
     background: rgba(255,255,255,.05); color: var(--text); border: none;
@@ -174,8 +181,12 @@
   <div class="bar" id="topbar">
     <div class="wordmark">BLOCK<span>ING</span></div>
     <div class="tag">direct, don't prompt</div>
-    <span class="stat"><i class="dot" id="dotPhone"></i>phone</span>
-    <span class="stat"><i class="dot" id="dotFal"></i>fal</span>
+    <button class="statTgl" id="phoneTgl" title="Click to pair your phone">
+      <i class="dot" id="dotPhone"></i>phone<span class="st" id="phoneState">not connected</span>
+    </button>
+    <button class="statTgl" id="falTgl" title="Click to re-check the fal key">
+      <i class="dot" id="dotFal"></i>fal<span class="st" id="falState">checking…</span>
+    </button>
   </div>
 
   <div class="island" id="tools">

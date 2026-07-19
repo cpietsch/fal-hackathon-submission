@@ -249,18 +249,23 @@ resize()
 
 // ---------------------------------------------------------------- phone pose intake
 const ws = { sock: null, open: false }
-const dotPhone = document.getElementById('dotPhone')
+const phoneTgl = document.getElementById('phoneTgl')
+function setPhoneConn(on) {
+  phoneTgl.classList.toggle('on', on)
+  document.getElementById('dotPhone').classList.toggle('on', on)
+  document.getElementById('phoneState').textContent = on ? 'connected' : 'not connected'
+}
 
 function connectWS() {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws'
   const s = new WebSocket(`${proto}://${location.host}/ws`)
   ws.sock = s
   s.onopen = () => { ws.open = true; s.send(JSON.stringify({ type: 'hello', role: 'director' })) }
-  s.onclose = () => { ws.open = false; dotPhone.classList.remove('on'); setTimeout(connectWS, 1500) }
+  s.onclose = () => { ws.open = false; setPhoneConn(false); setTimeout(connectWS, 1500) }
   s.onmessage = (ev) => {
     let m
     try { m = JSON.parse(ev.data) } catch { return }
-    if (m.type === 'presence') dotPhone.classList.toggle('on', m.roles.includes('camera'))
+    if (m.type === 'presence') setPhoneConn(m.roles.includes('camera'))
     else if (m.type === 'genState' && generating) {
       genLabel.textContent = m.status === 'IN_QUEUE'
         ? `In queue${m.position != null ? ` #${m.position}` : ''}…`
@@ -877,9 +882,26 @@ document.getElementById('pairBtn').onclick = () => {
   pairModal.classList.add('open')
 }
 
-fetch('/api/config').then((r) => r.json()).then((c) => {
-  document.getElementById('dotFal').classList.toggle('on', c.falKeySet)
-})
+const falTgl = document.getElementById('falTgl')
+async function refreshFal(announce) {
+  let on = false
+  try {
+    const c = await fetch('/api/config').then((r) => r.json())
+    on = Boolean(c.falKeySet)
+  } catch { /* server unreachable — stay off */ }
+  falTgl.classList.toggle('on', on)
+  document.getElementById('dotFal').classList.toggle('on', on)
+  document.getElementById('falState').textContent = on ? 'ready' : 'no key'
+  if (announce) {
+    toast(on
+      ? 'fal key loaded — ready to generate'
+      : 'FAL_KEY not set — add FAL_KEY=… to a .env file and restart the server')
+  }
+  return on
+}
+refreshFal(false)
+falTgl.onclick = () => refreshFal(true)
+phoneTgl.onclick = () => document.getElementById('pairBtn').click()
 
 let toastTimer = 0
 function toast(msg) {
