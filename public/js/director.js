@@ -4,9 +4,14 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 // ---------------------------------------------------------------- scene setup
 const view = document.getElementById('view')
 const renderer = new THREE.WebGLRenderer({ antialias: true })
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
+renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5))
 renderer.shadowMap.enabled = true
-renderer.shadowMap.type = THREE.PCFSoftShadowMap
+renderer.shadowMap.type = THREE.PCFShadowMap
+// shadows only change when stage objects move — re-render the map on demand,
+// not twice per frame (main + PiP pass)
+renderer.shadowMap.autoUpdate = false
+renderer.shadowMap.needsUpdate = true
+const shadowsDirty = () => { renderer.shadowMap.needsUpdate = true }
 view.appendChild(renderer.domElement)
 
 const scene = new THREE.Scene()
@@ -18,7 +23,7 @@ scene.add(hemi)
 const sun = new THREE.DirectionalLight(0xffe8c4, 1.6)
 sun.position.set(6, 10, 4)
 sun.castShadow = true
-sun.shadow.mapSize.set(2048, 2048)
+sun.shadow.mapSize.set(1024, 1024)
 sun.shadow.camera.left = sun.shadow.camera.bottom = -16
 sun.shadow.camera.right = sun.shadow.camera.top = 16
 scene.add(sun)
@@ -107,6 +112,7 @@ function addObject(kind, x = 0, z = 0) {
   const g = makeObject(kind)
   g.position.set(x, 0, z)
   stage.add(g)
+  shadowsDirty()
   select(g)
   saveScene()
   return g
@@ -163,6 +169,7 @@ renderer.domElement.addEventListener('pointermove', (e) => {
       THREE.MathUtils.clamp(p.x + dragOffset.x, -14, 14), 0,
       THREE.MathUtils.clamp(p.z + dragOffset.z, -14, 14),
     )
+    shadowsDirty()
   }
 })
 addEventListener('pointerup', () => {
@@ -173,10 +180,10 @@ addEventListener('pointerup', () => {
 
 addEventListener('keydown', (e) => {
   if (e.target.tagName === 'INPUT') return
-  if (selected && (e.key === 'q' || e.key === 'Q')) { selected.rotation.y += Math.PI / 12; saveScene() }
-  if (selected && (e.key === 'e' || e.key === 'E')) { selected.rotation.y -= Math.PI / 12; saveScene() }
+  if (selected && (e.key === 'q' || e.key === 'Q')) { selected.rotation.y += Math.PI / 12; shadowsDirty(); saveScene() }
+  if (selected && (e.key === 'e' || e.key === 'E')) { selected.rotation.y -= Math.PI / 12; shadowsDirty(); saveScene() }
   if (selected && (e.key === 'Delete' || e.key === 'Backspace')) {
-    stage.remove(selected); select(null); saveScene()
+    stage.remove(selected); shadowsDirty(); select(null); saveScene()
   }
   if (e.key === 'Escape') select(null)
   keys.add(e.code)
@@ -201,6 +208,7 @@ function loadScene() {
       g.rotation.y = o.ry
       stage.add(g)
     }
+    shadowsDirty()
   } catch {
     // default scene: two actors facing each other, a prop between
     addObject('actor', -1.1, 0).rotation.y = -Math.PI / 2
