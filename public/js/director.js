@@ -80,8 +80,8 @@ function makeObject(kind) {
     }
     add(new THREE.SphereGeometry(0.11, 16, 12), 0, 1.62, 0) // head
     add(new THREE.CapsuleGeometry(0.17, 0.42, 6, 12), 0, 1.18, 0) // torso
-    add(new THREE.CapsuleGeometry(0.05, 0.5, 4, 8), -0.27, 1.1, 0, 0.14) // arms
-    add(new THREE.CapsuleGeometry(0.05, 0.5, 4, 8), 0.27, 1.1, 0, -0.14)
+    add(new THREE.CapsuleGeometry(0.055, 0.48, 4, 8), -0.23, 1.1, 0, 0.06) // arms close to torso —
+    add(new THREE.CapsuleGeometry(0.055, 0.48, 4, 8), 0.23, 1.1, 0, -0.06) // separated limbs render as tubes in close shots
     add(new THREE.CapsuleGeometry(0.07, 0.72, 4, 8), -0.1, 0.45, 0) // legs
     add(new THREE.CapsuleGeometry(0.07, 0.72, 4, 8), 0.1, 0.45, 0)
     add(new THREE.BoxGeometry(0.06, 0.06, 0.08), 0, 1.62, -0.13) // face marker
@@ -592,7 +592,7 @@ function coverageRig() {
     const t = props[0].position.clone().setY(0.5)
     const insFrom = t.clone().addScaledVector(perp, 2.4).addScaledVector(axis, 0.5).setY(1.15)
     const insDir = t.clone().sub(insFrom).normalize()
-    angles.push({ key: 'insert', hint: 'medium close-up on the object, shallow depth of field', poseAt: push(insFrom, insDir, 0.3, t) })
+    angles.push({ key: 'insert', hint: 'medium close-up on the object, softly lit detail, shallow depth of field', poseAt: push(insFrom, insDir, 0.3, t) })
   }
   { // slow-arc b-roll
     const r = span * 0.9 + 1.8
