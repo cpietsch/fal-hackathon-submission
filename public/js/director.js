@@ -76,6 +76,11 @@ const cube = new THREE.Mesh(
 cube.position.y = 0.5
 cube.castShadow = cube.receiveShadow = true
 cubeGroup.add(cube)
+// invisible, slightly larger hit target — clicks near the cube still count
+const hitProxy = new THREE.Mesh(new THREE.BoxGeometry(1.5, 1.5, 1.5), new THREE.MeshBasicMaterial())
+hitProxy.position.y = 0.5
+hitProxy.visible = false
+cubeGroup.add(hitProxy)
 cubeGroup.userData = { kind: 'prop', id: 1 }
 stage.add(cubeGroup)
 
@@ -98,9 +103,14 @@ function pointerRay(e) {
   return ray
 }
 
+let hoveringCube = false
+function applyCubeGlow() {
+  const open = cubeBox.classList.contains('open')
+  cube.material.emissive.setHex(open ? 0x7a4d00 : hoveringCube ? 0x2a1c05 : 0x000000)
+}
 function setCubeBox(open) {
   cubeBox.classList.toggle('open', open)
-  cube.material.emissive.setHex(open ? 0x7a4d00 : 0x000000)
+  applyCubeGlow()
   if (open) {
     cubePrompt.value = objectPrompt
     positionCubeBox()
@@ -128,15 +138,28 @@ cubePrompt.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); document.getElementById('cubeOk').click() }
 })
 
+// a click is pointerdown + pointerup without dragging — orbiting the view
+// with a drag that starts on the cube must NOT toggle the toolbox
 const keys = new Set()
+let downAt = null
 renderer.domElement.addEventListener('pointerdown', (e) => {
   if (inPip(e)) { setSwapped(!swapped); return }
+  downAt = [e.clientX, e.clientY]
+})
+renderer.domElement.addEventListener('pointerup', (e) => {
+  if (!downAt) return
+  const moved = Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1])
+  downAt = null
+  if (moved > 5) return // that was an orbit drag, not a click
   if (swapped || simMode) { toast('Editing is locked while flying — exit Camera view / Fly controls first'); return }
   const hits = pointerRay(e).intersectObjects(stage.children, true)
   setCubeBox(hits.length > 0)
 })
 renderer.domElement.addEventListener('pointermove', (e) => {
-  renderer.domElement.style.cursor = inPip(e) ? 'pointer' : ''
+  if (swapped || simMode) { renderer.domElement.style.cursor = inPip(e) ? 'pointer' : ''; return }
+  const overCube = !inPip(e) && pointerRay(e).intersectObjects(stage.children, true).length > 0
+  if (overCube !== hoveringCube) { hoveringCube = overCube; applyCubeGlow() }
+  renderer.domElement.style.cursor = inPip(e) || overCube ? 'pointer' : ''
 })
 addEventListener('keydown', (e) => {
   if (/INPUT|TEXTAREA/.test(e.target.tagName)) return
