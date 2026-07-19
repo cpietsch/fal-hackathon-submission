@@ -429,6 +429,7 @@ const HTTPS_PORT = Number(process.env.HTTPS_PORT || 8443)
 
 const httpServer = http.createServer(app)
 httpServer.requestTimeout = 0 // generation requests can run for minutes
+httpServer.requestTimeout = 0 // generation responses can take many minutes
 attachWss(httpServer)
 httpServer.listen(HTTP_PORT, '0.0.0.0', () => printUrls('http', HTTP_PORT))
 

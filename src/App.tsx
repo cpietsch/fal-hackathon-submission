@@ -125,6 +125,7 @@ export default function App() {
   }, [])
 
   const cdTimer = useRef(0)
+  const genDoneRef = useRef(false)
   const stopRec = useCallback(() => {
     if (!live.current.recording) return
     const frames = stageRef.current!.stopRecording()
@@ -241,6 +242,7 @@ export default function App() {
         try { m = JSON.parse(ev.data) } catch { return }
         if (m.type === 'presence') setPhoneConn(m.roles.includes('camera'))
         else if (m.type === 'genState' && live.current.generating) {
+          if (m.status === 'COMPLETED') genDoneRef.current = true
           setGenInfo((prev) => prev && {
             ...prev,
             label: m.status === 'IN_QUEUE' ? 'In queue' : m.status === 'COMPLETED' ? 'Finishing…' : 'Rendering on fal…',
@@ -310,25 +312,54 @@ export default function App() {
     }
     setGenerating(true)
     live.current.generating = true
+    genDoneRef.current = false
     setGenInfo({ label: 'Rendering previz…', queuePos: null, t0: Date.now() })
+    let settled = false
     try {
       await new Promise((r) => setTimeout(r, 30)) // let the status paint
       const frames = stageRef.current!.renderDepthFrames(take)
       setGenInfo((p) => p && { ...p, label: 'Uploading & starting…' })
       toast('Depth previz uploaded — fal is dreaming')
-      const resp = await fetch('/api/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ frames, prompt, fps: 16, mode: 'beautiful', refs: live.current.refs }),
-      })
-      const out = await resp.json()
-      if (!resp.ok) throw new Error(out.error || resp.statusText)
+      const t0Id = new Date(Date.now() - 5000).toISOString().replace(/[:.]/g, '-')
+
+      const viaHttp = (async () => {
+        const resp = await fetch('/api/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ frames, prompt, fps: 16, mode: 'beautiful', refs: live.current.refs }),
+        })
+        const out = await resp.json()
+        if (!resp.ok) throw new Error(out.error || resp.statusText)
+        return out
+      })()
+      // recovery: if fal reports COMPLETED but the http response got lost
+      // (dropped connection, proxy, server restart), pull the finished shot
+      // from the sessions list instead of spinning forever
+      const viaSessions = (async () => {
+        for (;;) {
+          await new Promise((r) => setTimeout(r, 5000))
+          if (settled) return new Promise(() => {}) // http already won — park forever
+          if (!genDoneRef.current) continue
+          await new Promise((r) => setTimeout(r, 10_000)) // give the response a head start
+          if (settled) return new Promise(() => {})
+          const list = await fetch('/api/sessions').then((r) => r.json()).catch(() => null)
+          const fresh = list?.[0]
+          if (fresh && fresh.id > t0Id) {
+            toast('Result recovered from the session store')
+            return { control: fresh.control, local: fresh.result }
+          }
+        }
+      })()
+
+      viaHttp.catch(() => {}) // recovery may win the race — don't leave the loser unhandled
+      const out = await Promise.race([viaHttp, viaSessions]) as GenResult
       setResult({ out, prompt })
       return out
     } catch (err: any) {
       console.error(err)
       toast(`Generation failed: ${err.message}`)
     } finally {
+      settled = true
       setGenerating(false)
       live.current.generating = false
       setGenInfo(null)
