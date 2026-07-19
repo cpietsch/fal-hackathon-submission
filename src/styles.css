@@ -17,9 +17,6 @@ canvas { display: block; }
   gap: 10px; padding: 8px 12px; z-index: 5;
 }
 #topbar { top: 0; background: linear-gradient(180deg, rgba(16,18,22,.92), rgba(16,18,22,0)); }
-.wordmark { font-weight: 700; letter-spacing: .14em; font-size: 14px; }
-.wordmark span { color: var(--accent); }
-.tag { color: var(--dim); font-size: 11px; margin-right: auto; }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: #555; display: inline-block; flex: none; }
 .dot.on { background: var(--ok); }
 .statTgl {
@@ -54,13 +51,15 @@ button.active { background: rgba(232,163,61,.16); color: var(--accent); }
 #tools { left: 14px; width: 156px; }
 #tools .hint { color: var(--dim); font-size: 11px; margin-top: 6px; }
 
+/* takes as browser-style tabs in the top bar */
 #takesWrap {
-  position: absolute; left: 12px; bottom: 12px; z-index: 5;
-  display: flex; gap: 8px; overflow-x: auto; max-width: max(150px, calc(50vw - 350px));
+  display: flex; gap: 8px; overflow-x: auto; flex: 1; min-width: 0;
+  scrollbar-width: none;
 }
+#takesWrap::-webkit-scrollbar { display: none; }
 .take {
-  background: rgba(255,255,255,.05); border: 1px solid transparent; border-radius: 8px;
-  padding: 6px 9px; display: flex; align-items: center; gap: 7px; flex: none;
+  border: 1px solid transparent; border-radius: 10px;
+  padding: 6px 10px; display: flex; align-items: center; gap: 7px; flex: none;
   background-color: rgba(25,28,34,.9);
 }
 .take.chosen { border-color: var(--accent); }
@@ -155,11 +154,13 @@ button.active { background: rgba(232,163,61,.16); color: var(--accent); }
 }
 #curveHead { display: flex; align-items: center; justify-content: space-between; }
 #curveTitle { font-size: 10px; letter-spacing: .12em; color: var(--dim); }
-#curveLegend { display: flex; gap: 8px; font-size: 10px; }
-#curveLegend i { font-style: normal; }
-#curveLegend .cx { color: #e5484d; }
-#curveLegend .cy { color: #46a758; }
-#curveLegend .cz { color: #5b8def; }
+#curveLegend { display: flex; gap: 4px; font-size: 10px; }
+.chBtn { padding: 2px 8px; border-radius: 5px; font-size: 10px; background: none; color: var(--dim); }
+.chBtn.on { background: rgba(255,255,255,.08); }
+.chBtn.cx.on { color: #e5484d; }
+.chBtn.cy.on { color: #46a758; }
+.chBtn.cz.on { color: #5b8def; }
+#curveCanvas { touch-action: none; }
 #curveCanvas { width: 100%; height: 140px; border-radius: 8px; background: #101216; }
 #smoothRow { display: flex; align-items: center; gap: 8px; color: var(--dim); font-size: 11px; }
 #smoothRow input { flex: 1; accent-color: var(--accent); }

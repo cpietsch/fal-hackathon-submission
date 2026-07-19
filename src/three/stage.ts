@@ -4,7 +4,13 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 export type Vec3 = [number, number, number]
 export type Quat = [number, number, number, number]
 export type Frame = { t: number; p: Vec3; q: Quat }
-export type Take = { id: number; name: string; dur: number; raw: Frame[]; frames: Frame[]; smooth: number }
+export type Take = {
+  id: number; name: string; dur: number
+  raw: Frame[]; frames: Frame[]; smooth: number
+  // hand-edited curve: control points per channel + which channels are edited
+  ctrl?: { t: number; v: number }[][]
+  editedCh?: boolean[]
+}
 export type CoverageAngle = { key: string; hint: string; poseAt: (u: number, cam: THREE.PerspectiveCamera) => void }
 
 export type StageCallbacks = {

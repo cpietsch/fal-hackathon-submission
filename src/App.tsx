@@ -4,6 +4,7 @@ import {
   Mic, Play, Send, Smartphone, Square, Video, X,
 } from 'lucide-react'
 import { createStage, smoothFrames, type Stage, type Take } from './three/stage'
+import { applyCtrl, initCtrl } from './lib/curves'
 import { CurvePanel } from './components/CurvePanel'
 import { PairModal } from './components/PairModal'
 import { ResultModal, type GenResult } from './components/ResultModal'
@@ -369,11 +370,36 @@ export default function App() {
     generate()
   }, [generate, toast])
 
-  // ------------------------------------------------------------ smoothing
+  // ------------------------------------------------------------ curve editing
+  // moving the smooth dial resets hand edits (they were sampled from the
+  // previous smoothing); dragging a handle keeps the current smoothing
   const applySmooth = useCallback((v: number) => {
     setTakes((ts) => ts.map((t) =>
-      t.id === live.current.chosenId ? { ...t, smooth: v, frames: smoothFrames(t.raw, v) } : t,
+      t.id === live.current.chosenId
+        ? { ...t, smooth: v, frames: smoothFrames(t.raw, v), ctrl: undefined, editedCh: undefined }
+        : t,
     ))
+  }, [])
+
+  const editPoint = useCallback((ch: number, idx: number, v: number) => {
+    setTakes((ts) => ts.map((t) => {
+      if (t.id !== live.current.chosenId) return t
+      const base = smoothFrames(t.raw, t.smooth)
+      const ctrl = t.ctrl ?? initCtrl(base)
+      const c2 = ctrl.map((arr, c) => (c === ch ? arr.map((p, i) => (i === idx ? { ...p, v } : p)) : arr))
+      const editedCh = [...(t.editedCh ?? [false, false, false])]
+      editedCh[ch] = true
+      return { ...t, ctrl: c2, editedCh, frames: applyCtrl(base, c2, editedCh) }
+    }))
+  }, [])
+
+  const resetEdits = useCallback(() => {
+    setTakes((ts) => ts.map((t) =>
+      t.id === live.current.chosenId
+        ? { ...t, ctrl: undefined, editedCh: undefined, frames: smoothFrames(t.raw, t.smooth) }
+        : t,
+    ))
+    setLangNonce((n) => n + 1)
   }, [])
 
   // ------------------------------------------------------------ refs (images)
@@ -416,8 +442,23 @@ export default function App() {
       <div id="view" ref={viewRef} />
 
       <div className="bar" id="topbar">
-        <div className="wordmark">BLOCK<span>ING</span></div>
-        <div className="tag">direct, don't prompt</div>
+        <div id="takesWrap">
+          {takes.map((t) => (
+            <div key={t.id} className={`take${t.id === chosenId ? ' chosen' : ''}`}>
+              <span className="nm">{t.name}</span>
+              <span className="dur">{t.dur.toFixed(1)}s</span>
+              <button title="Play this take" onClick={() => stageRef.current?.playTake(t)}><Play className="icon" /></button>
+              <button title="Use this take as the motion" onClick={() => setChosenId(t.id)}><Check className="icon" /></button>
+              <button title="Delete this take" onClick={() => {
+                setTakes((ts) => ts.filter((x) => x.id !== t.id))
+                if (chosenId === t.id) {
+                  const rest = takes.filter((x) => x.id !== t.id)
+                  setChosenId(rest.length ? rest[rest.length - 1].id : null)
+                }
+              }}><X className="icon" /></button>
+            </div>
+          ))}
+        </div>
         <button className={`statTgl${phoneConn ? ' on' : ''}`} id="phoneTgl" title="Click to pair your phone"
           onClick={() => setPairOpen(true)}>
           <i className={`dot${phoneConn ? ' on' : ''}`} id="dotPhone" />phone
@@ -479,26 +520,14 @@ export default function App() {
         </button>
       </div>
 
-      <div id="takesWrap">
-        {takes.map((t) => (
-          <div key={t.id} className={`take${t.id === chosenId ? ' chosen' : ''}`}>
-            <span className="nm">{t.name}</span>
-            <span className="dur">{t.dur.toFixed(1)}s</span>
-            <button title="Play this take" onClick={() => stageRef.current?.playTake(t)}><Play className="icon" /></button>
-            <button title="Use this take as the motion" onClick={() => setChosenId(t.id)}><Check className="icon" /></button>
-            <button title="Delete this take" onClick={() => {
-              setTakes((ts) => ts.filter((x) => x.id !== t.id))
-              if (chosenId === t.id) {
-                const rest = takes.filter((x) => x.id !== t.id)
-                setChosenId(rest.length ? rest[rest.length - 1].id : null)
-              }
-            }}><X className="icon" /></button>
-          </div>
-        ))}
-      </div>
-
       {chosenTake && !swapped && !recording && (
-        <CurvePanel take={chosenTake} onSmooth={applySmooth} onSmoothCommit={() => setLangNonce((n) => n + 1)} />
+        <CurvePanel
+          take={chosenTake}
+          onSmooth={applySmooth}
+          onEditPoint={editPoint}
+          onResetEdits={resetEdits}
+          onCommit={() => setLangNonce((n) => n + 1)}
+        />
       )}
 
       <div id="promptBar">
