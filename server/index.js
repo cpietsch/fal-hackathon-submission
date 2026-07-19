@@ -179,26 +179,50 @@ function analyzeTrajectory(frames) {
   }
 }
 
-const CAM_SYS = `You are a veteran cinematographer. You get numeric features of a
-performed camera move (signs: dolly + = toward subject, truck + = right,
-pedestal + = up, pan + = left, tilt + = up, orbit + = counterclockwise around
-the subject). Write JSON only:
-{"move_name": "2-4 word name", "camera_prompt": "ONE sentence, max 28 words,
-describing ONLY the camera move in professional video-prompt language (dolly,
-truck, arc, pan, crane, push-in, ease), with speed and framing evolution.
-No scene content, no subjects."}`
+// Signs are resolved to words HERE, deterministically — the LLM only phrases,
+// it never interprets numbers (it flipped pan direction once at temp 0.3).
+function featureWords(f) {
+  const w = []
+  if (f.dolly_m > 0.15) w.push(`dolly in ${f.dolly_m}m`)
+  else if (f.dolly_m < -0.15) w.push(`dolly out ${-f.dolly_m}m`)
+  if (f.truck_m > 0.15) w.push(`truck right ${f.truck_m}m`)
+  else if (f.truck_m < -0.15) w.push(`truck left ${-f.truck_m}m`)
+  if (f.pedestal_m > 0.15) w.push(`crane up ${f.pedestal_m}m`)
+  else if (f.pedestal_m < -0.15) w.push(`crane down ${-f.pedestal_m}m`)
+  if (f.pan_deg > 8) w.push(`pan left ${Math.round(f.pan_deg)} degrees`)
+  else if (f.pan_deg < -8) w.push(`pan right ${Math.round(-f.pan_deg)} degrees`)
+  if (f.tilt_deg > 8) w.push(`tilt up ${Math.round(f.tilt_deg)} degrees`)
+  else if (f.tilt_deg < -8) w.push(`tilt down ${Math.round(-f.tilt_deg)} degrees`)
+  if (Math.abs(f.orbit_around_subject_deg) > 15 && Math.abs(f.truck_m) > 0.5) {
+    w.push(`arc ${f.orbit_around_subject_deg > 0 ? 'left' : 'right'} around the subject`)
+  }
+  if (!w.length) w.push('locked-off static shot')
+  if (f.ease_in) w.push('eases in from a standstill')
+  if (f.ease_out) w.push('eases out to a stop')
+  if (f.handheld_shake !== 'none') w.push(`${f.handheld_shake} handheld sway`)
+  w.push(`total duration ${f.duration_s}s at ${f.mean_speed_mps} m/s`)
+  return w
+}
+
+const CAM_SYS = `You are a veteran cinematographer. You get factual fragments
+describing a performed camera move. Use EXACTLY these facts — never add, drop,
+or reverse a direction. Write JSON only:
+{"move_name": "2-4 word name", "camera_prompt": "ONE fluent sentence, max 28
+words, professional video-prompt camera language (dolly, truck, arc, pan,
+crane, push-in, ease). No scene content, no subjects."}`
 
 app.post('/api/camera-language', async (req, res) => {
   const { frames } = req.body || {}
   if (!Array.isArray(frames) || frames.length < 5) return res.status(400).json({ error: 'need frames' })
   try {
     const features = analyzeTrajectory(frames)
+    const words = featureWords(features)
     const { data } = await fal.subscribe('openrouter/router', {
       input: {
         model: 'google/gemini-2.5-flash',
         system_prompt: CAM_SYS,
-        prompt: JSON.stringify(features),
-        temperature: 0.3,
+        prompt: words.join('; '),
+        temperature: 0.2,
         max_tokens: 200,
       },
     })
@@ -251,6 +275,7 @@ app.post('/api/generate', async (req, res) => {
   const id = new Date().toISOString().replace(/[:.]/g, '-')
   const dir = path.join(sessionsDir, id)
   fs.mkdirSync(dir, { recursive: true })
+  const mode = req.body.mode === 'beautiful' ? 'beautiful' : 'exact'
   try {
     frames.forEach((f, i) => {
       fs.writeFileSync(path.join(dir, `f_${String(i).padStart(4, '0')}.png`),
@@ -263,16 +288,22 @@ app.post('/api/generate', async (req, res) => {
     const file = new File([fs.readFileSync(controlPath)], 'control.mp4', { type: 'video/mp4' })
     const controlUrl = await fal.storage.upload(file)
 
-    const model = DEPTH_MODELS[modelKey] || DEPTH_MODELS['wan22-fun']
-    const input = {
-      prompt,
-      video_url: controlUrl,
-      preprocess: false, // we already send a depth video
-      match_input_num_frames: true,
-      match_input_frames_per_second: true,
-      resolution,
-      aspect_ratio: '16:9',
-    }
+    // exact: depth-constrained VACE. beautiful: camera language in the prompt
+    // on a frontier model — follows intent, not geometry.
+    const model = mode === 'beautiful'
+      ? 'bytedance/seedance-2.0/fast/text-to-video'
+      : DEPTH_MODELS[modelKey] || DEPTH_MODELS['wan22-fun']
+    const input = mode === 'beautiful'
+      ? { prompt, resolution: '720p', duration: '5', aspect_ratio: '16:9', generate_audio: false }
+      : {
+          prompt,
+          video_url: controlUrl,
+          preprocess: false, // we already send a depth video
+          match_input_num_frames: true,
+          match_input_frames_per_second: true,
+          resolution,
+          aspect_ratio: '16:9',
+        }
     falLog({ event: 'request', id, model, input: { ...input, video_url: controlUrl } })
     console.log(`[gen ${id}] ${frames.length} frames -> ${model}`)
 

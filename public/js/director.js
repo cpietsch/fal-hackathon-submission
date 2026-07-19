@@ -481,12 +481,21 @@ let shotSpec = { prompt: '' }
 
 const genBtn = document.getElementById('genBtn')
 let generating = false
+let genMode = 'exact'
+for (const [id, m] of [['modeExact', 'exact'], ['modeBeautiful', 'beautiful']]) {
+  document.getElementById(id).onclick = () => {
+    genMode = m
+    document.getElementById('modeExact').classList.toggle('active', m === 'exact')
+    document.getElementById('modeBeautiful').classList.toggle('active', m === 'beautiful')
+  }
+}
 
 async function generate(promptOverride) {
   if (generating) return toast('Already generating…')
   const take = takes.find((t) => t.id === chosenId)
   if (!take) return toast('Record and choose a take first')
-  const prompt = promptOverride || shotSpec.prompt || DEFAULT_PROMPT
+  let prompt = promptOverride || shotSpec.prompt || DEFAULT_PROMPT
+  if (genMode === 'beautiful' && shotSpec.camera) prompt += ` Camera: ${shotSpec.camera}`
   generating = true
   genBtn.textContent = 'Rendering previz…'
   try {
@@ -497,7 +506,7 @@ async function generate(promptOverride) {
     const resp = await fetch('/api/generate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ frames, prompt, fps: 16 }),
+      body: JSON.stringify({ frames, prompt, fps: 16, mode: genMode }),
     })
     const out = await resp.json()
     if (!resp.ok) throw new Error(out.error || resp.statusText)
