@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
-  Box, Check, Crosshair, Disc, Film, Gamepad2, Image as ImageIcon,
+  Box, Check, Crosshair, Disc, Film, Folder, Gamepad2, Image as ImageIcon,
   Mic, Play, Plus, Send, Smartphone, Square, Video, X,
 } from 'lucide-react'
 import { createStage, smoothFrames, type Stage, type Take } from './three/stage'
@@ -8,6 +8,7 @@ import { applyCtrl, initCtrl } from './lib/curves'
 import { CurvePanel } from './components/CurvePanel'
 import { PairModal } from './components/PairModal'
 import { ResultModal, type GenResult } from './components/ResultModal'
+import { HistoryModal } from './components/HistoryModal'
 import { useDictation } from './lib/dictation'
 
 const DEFAULT_PROMPT = 'A single object on the floor of an empty concrete warehouse at night, '
@@ -44,6 +45,7 @@ export default function App() {
   const [falReady, setFalReady] = useState(false)
   const [toastMsg, setToastMsg] = useState<string | null>(null)
   const [pairOpen, setPairOpen] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(false)
   const [result, setResult] = useState<{ out: GenResult; prompt: string } | null>(null)
 
   // live mirror of state for stage/ws callbacks created on the first render
@@ -625,6 +627,11 @@ export default function App() {
         <div id="countdown"><b key={countdown}>{countdown}</b></div>
       )}
 
+      <button id="historyBtn" title="Generated video history" onClick={() => setHistoryOpen(true)}>
+        <Folder className="icon" />
+      </button>
+
+      {historyOpen && <HistoryModal onClose={() => setHistoryOpen(false)} />}
       {pairOpen && <PairModal onClose={() => setPairOpen(false)} />}
       {result && <ResultModal out={result.out} prompt={result.prompt} onClose={() => setResult(null)} />}
 
