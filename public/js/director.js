@@ -367,6 +367,7 @@ function setRecording(on) {
     recFrames = null
     renderTakes()
     toast(`${take.name} saved — ${dur.toFixed(1)}s`)
+    if (chosenId === take.id) updateCameraLanguage()
   }
 }
 
@@ -382,7 +383,7 @@ function renderTakes() {
     const use = document.createElement('button')
     use.textContent = '✓'
     use.title = 'Use this take for generation'
-    use.onclick = () => { chosenId = t.id; renderTakes() }
+    use.onclick = () => { chosenId = t.id; renderTakes(); updateCameraLanguage() }
     const del = document.createElement('button')
     del.textContent = '✕'
     del.onclick = () => {
@@ -655,10 +656,38 @@ function setListening(on) {
   else if (!on && micBtn.textContent.startsWith('●')) micBtn.textContent = '🎙 Speak the shot'
 }
 
+// the performed move, translated to cinematographer language (for prompt-
+// driven models and as a readable label for the director)
+let cameraLanguage = null
+async function updateCameraLanguage() {
+  const take = takes.find((t) => t.id === chosenId)
+  const chip = document.getElementById('camChip')
+  if (!take) { chip.style.display = 'none'; return }
+  chip.style.display = 'inline-block'
+  chip.textContent = '📷 reading the move…'
+  try {
+    const r = await fetch('/api/camera-language', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ frames: take.frames }),
+    })
+    const out = await r.json()
+    if (!r.ok) throw new Error(out.error || r.statusText)
+    cameraLanguage = out
+    chip.textContent = `📷 ${out.move_name}`
+    chip.title = out.camera_prompt
+    shotSpec.camera = out.camera_prompt
+  } catch (err) {
+    chip.textContent = '📷 (unreadable move)'
+    console.error(err)
+  }
+}
+
 // scripting/debug hook
 window.__blocking = {
   generate, renderDepthFrames, takes: () => takes,
   setSpec: (s) => { shotSpec = s }, onTranscript, sceneSummary, showResult,
+  cameraLanguage: () => cameraLanguage, updateCameraLanguage,
 }
 
 // ---------------------------------------------------------------- UI chrome
