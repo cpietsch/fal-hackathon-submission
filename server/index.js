@@ -9,7 +9,7 @@ import { spawn } from 'child_process'
 import { WebSocketServer } from 'ws'
 import QRCode from 'qrcode'
 import ffmpegPath from 'ffmpeg-static'
-import { fal, createFalClient } from '@fal-ai/client'
+import { fal } from '@fal-ai/client'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const root = path.join(__dirname, '..')
@@ -31,22 +31,16 @@ app.use(express.static(path.join(root, 'public')))
 app.use('/vendor/three', express.static(path.join(root, 'node_modules/three')))
 
 app.get('/api/config', (_req, res) => {
-  res.json({
-    falKeySet: Boolean(process.env.FAL_KEY),
-    klingKeySet: Boolean(process.env.KLING_KEY),
-  })
+  res.json({ falKeySet: Boolean(process.env.FAL_KEY) })
 })
 
 // ---------------------------------------------------------------- generation
 if (process.env.FAL_KEY) fal.config({ credentials: process.env.FAL_KEY })
 
-// Kling (via fal): set KLING_KEY in .env to route Beautiful mode to Kling.
+// Beautiful mode runs Kling on fal with the same FAL_KEY.
 // Model ids overridable via KLING_MODEL / KLING_MODEL_I2V.
 const KLING_MODEL = process.env.KLING_MODEL || 'fal-ai/kling-video/v2.5-turbo/pro/text-to-video'
 const KLING_MODEL_I2V = process.env.KLING_MODEL_I2V || 'fal-ai/kling-video/v2.5-turbo/pro/image-to-video'
-const klingClient = process.env.KLING_KEY
-  ? createFalClient({ credentials: process.env.KLING_KEY })
-  : null
 
 const sessionsDir = path.join(root, 'sessions')
 fs.mkdirSync(sessionsDir, { recursive: true })
@@ -338,16 +332,13 @@ app.post('/api/generate', async (req, res) => {
         Buffer.from(r.slice(r.indexOf(',') + 1), 'base64'))
     })
 
-    // exact: depth-constrained VACE. beautiful: camera language in the prompt
-    // on a frontier model — Kling when KLING_KEY is set, Seedance otherwise.
-    let client = fal
+    // exact: depth-constrained VACE. beautiful: camera language in the
+    // prompt on Kling — follows intent, not geometry.
     let model = mode === 'beautiful'
-      ? (klingClient ? KLING_MODEL : 'bytedance/seedance-2.0/fast/text-to-video')
+      ? KLING_MODEL
       : DEPTH_MODELS[modelKey] || DEPTH_MODELS['wan22-fun']
     let input = mode === 'beautiful'
-      ? (klingClient
-          ? { prompt, duration: '5', aspect_ratio: '16:9' }
-          : { prompt, resolution: '720p', duration: '5', aspect_ratio: '16:9', generate_audio: false })
+      ? { prompt, duration: '5', aspect_ratio: '16:9' }
       : {
           prompt,
           video_url: controlUrl,
@@ -357,22 +348,19 @@ app.post('/api/generate', async (req, res) => {
           resolution,
           aspect_ratio: '16:9',
         }
-    if (mode === 'beautiful' && klingClient) client = klingClient
     if (mode === 'beautiful' && refs.length) {
       const raw = refs[0]
       const type = (/^data:(image\/\w+);/.exec(raw) || [])[1] || 'image/jpeg'
       const refFile = new File([Buffer.from(raw.slice(raw.indexOf(',') + 1), 'base64')], 'ref', { type })
-      const refUrl = await client.storage.upload(refFile)
-      model = klingClient ? KLING_MODEL_I2V : 'bytedance/seedance-2.0/fast/image-to-video'
-      input = klingClient
-        ? { prompt, image_url: refUrl, duration: '5' }
-        : { prompt, image_url: refUrl, resolution: '720p', duration: '5', generate_audio: false }
+      const refUrl = await fal.storage.upload(refFile)
+      model = KLING_MODEL_I2V
+      input = { prompt, image_url: refUrl, duration: '5' }
     }
     falLog({ event: 'request', id, model, input: { ...input, video_url: controlUrl } })
     console.log(`[gen ${id}] ${frames.length} frames -> ${model}`)
 
     const t0 = Date.now()
-    const { data, requestId } = await client.subscribe(model, {
+    const { data, requestId } = await fal.subscribe(model, {
       input,
       logs: true,
       onQueueUpdate: (u) => {

@@ -42,7 +42,6 @@ export default function App() {
   const [cubeText, setCubeText] = useState('')
   const [phoneConn, setPhoneConn] = useState(false)
   const [falReady, setFalReady] = useState(false)
-  const [klingReady, setKlingReady] = useState(false)
   const [toastMsg, setToastMsg] = useState<string | null>(null)
   const [pairOpen, setPairOpen] = useState(false)
   const [result, setResult] = useState<{ out: GenResult; prompt: string } | null>(null)
@@ -239,14 +238,11 @@ export default function App() {
   // ------------------------------------------------------------ config / status pills
   const refreshConfig = useCallback(async (announce: boolean) => {
     let fal = false
-    let kling = false
     try {
       const c = await fetch('/api/config').then((r) => r.json())
       fal = Boolean(c.falKeySet)
-      kling = Boolean(c.klingKeySet)
     } catch { /* server unreachable — stay off */ }
     setFalReady(fal)
-    setKlingReady(kling)
     if (announce) {
       toast(fal
         ? 'fal key loaded — ready to generate'
@@ -469,11 +465,6 @@ export default function App() {
           <i className={`dot${falReady ? ' on' : ''}`} id="dotFal" />fal
           <span className="st" id="falState">{falReady ? 'ready' : 'no key'}</span>
         </button>
-        {klingReady && (
-          <button className="statTgl on" id="klingTgl" title="Kling key loaded — Beautiful mode runs Kling">
-            <i className="dot on" />kling<span className="st">ready</span>
-          </button>
-        )}
       </div>
 
       <div className="island" id="tools">
