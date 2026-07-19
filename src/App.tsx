@@ -27,7 +27,7 @@ export default function App() {
   const [chosenId, setChosenId] = useState<number | null>(null)
   const [cameraLanguage, setCameraLanguage] = useState<CameraLanguage | null>(null)
   const [langNonce, setLangNonce] = useState(0)
-  const [objectPrompt, setObjectPromptState] = useState(() => localStorage.getItem('blocking-object-v1') || '')
+  const [objectPrompt, setObjectPromptState] = useState('') // session-only, empty on every load
   const [refs, setRefs] = useState<string[]>([])
   const [mainText, setMainText] = useState('')
   const [genMode, setGenMode] = useState<'exact' | 'beautiful'>('exact')
@@ -67,10 +67,7 @@ export default function App() {
 
   const dict = useDictation(toast)
 
-  const setObjectPrompt = useCallback((v: string) => {
-    setObjectPromptState(v)
-    localStorage.setItem('blocking-object-v1', v)
-  }, [])
+  const setObjectPrompt = useCallback((v: string) => setObjectPromptState(v), [])
 
   // ------------------------------------------------------------ cube toolbox
   const cubeBoxRef = useRef<HTMLDivElement>(null)
