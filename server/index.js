@@ -25,6 +25,9 @@ if (fs.existsSync(envPath)) {
 
 const app = express()
 app.use(express.json({ limit: '100mb' }))
+// the React director app (vite build) is the root; public/ keeps the
+// phone capture page + gallery, which stay deliberately build-free
+app.use(express.static(path.join(root, 'web/dist')))
 app.use(express.static(path.join(root, 'public')))
 app.use('/vendor/three', express.static(path.join(root, 'node_modules/three')))
 
@@ -288,10 +291,50 @@ app.get('/api/sessions', (_req, res) => {
   res.json(out)
 })
 
+// reference image (data URL) -> fal storage -> URL for ref_image_urls
+app.post('/api/upload-ref', async (req, res) => {
+  const { image, name } = req.body || {}
+  if (!image || !image.startsWith('data:image/')) return res.status(400).json({ error: 'no image' })
+  try {
+    const mime = image.slice(5, image.indexOf(';'))
+    const buf = Buffer.from(image.slice(image.indexOf(',') + 1), 'base64')
+    const file = new File([buf], String(name || 'ref.png').replace(/[^\w.-]/g, '_'), { type: mime })
+    const url = await fal.storage.upload(file)
+    falLog({ event: 'upload-ref', name, url, bytes: buf.length })
+    res.json({ url })
+  } catch (err) {
+    console.error('[upload-ref] FAILED:', err)
+    res.status(500).json({ error: String(err?.message || err) })
+  }
+})
+
 // frames: array of data-URL PNGs (the depth-rendered take), fps: control fps
 const DEPTH_MODELS = {
   'wan22-fun': 'fal-ai/wan-22-vace-fun-a14b/depth',
   'wan21': 'fal-ai/wan-vace-14b/depth',
+}
+
+// ---- generation queue: every in-flight job, visible to every open tab ----
+const genJobs = new Map() // id -> {id, t0, mode, label, status, position, prompt}
+function jobUpdate(id, patch) {
+  const j = genJobs.get(id) || { id, t0: Date.now() }
+  Object.assign(j, patch)
+  genJobs.set(id, j)
+  broadcastQueue()
+}
+function jobEnd(id) {
+  genJobs.delete(id)
+  broadcastQueue()
+}
+function broadcastQueue() {
+  broadcastAll({
+    type: 'genQueue',
+    jobs: [...genJobs.values()].map((j) => ({
+      id: j.id, mode: j.mode, label: j.label, status: j.status,
+      position: j.position ?? null, secs: Math.round((Date.now() - j.t0) / 1000),
+      prompt: (j.prompt || '').slice(0, 60),
+    })),
+  })
 }
 
 app.post('/api/generate', async (req, res) => {
@@ -304,6 +347,7 @@ app.post('/api/generate', async (req, res) => {
   const dir = path.join(sessionsDir, id)
   fs.mkdirSync(dir, { recursive: true })
   const mode = req.body.mode === 'beautiful' ? 'beautiful' : 'exact'
+  jobUpdate(id, { mode, prompt, label: 'Uploading previz…', status: 'PREP' })
   try {
     frames.forEach((f, i) => {
       fs.writeFileSync(path.join(dir, `f_${String(i).padStart(4, '0')}.png`),
@@ -332,23 +376,27 @@ app.post('/api/generate', async (req, res) => {
           resolution,
           aspect_ratio: '16:9',
         }
+    // reference stills steer identity/atmosphere on the depth-constrained path
+    // (validated charref mechanism; the Seedance t2v endpoint takes no refs)
+    const refs = Array.isArray(req.body.refs) ? req.body.refs.filter((u) => typeof u === 'string' && u.startsWith('http')) : []
+    if (mode === 'exact' && refs.length) input.ref_image_urls = refs.slice(0, 3)
     // Optional second depth pass (Christopher's insight): primitive-proxy depth
     // maps 1:1 into stiff, generic bodies. Bootstrap instead: cheap draft pass
     // (mannequins become real coated humans + an invented environment), read
     // realistic depth back off the draft, and constrain the final pass with
     // THAT — trajectory preserved, silhouettes now human, scene depth rich.
     if (mode === 'exact' && req.body.detail) {
-      broadcastAll({ type: 'genState', status: 'DETAIL', label: 'Draft pass…' })
+      jobUpdate(id, { label: 'Draft pass…', status: 'DETAIL', position: null })
       console.log(`[gen ${id}] detail: draft pass`)
       const draft = await fal.subscribe(model, {
         input: { ...input, resolution: '480p' },
-        onQueueUpdate: (u) => broadcastAll({ type: 'genState', status: u.status, position: u.queue_position ?? null, label: `Draft: ${u.status}` }),
+        onQueueUpdate: (u) => jobUpdate(id, { status: u.status, position: u.queue_position ?? null }),
       })
       falLog({ event: 'detail-draft', id, requestId: draft.requestId, video: draft.data?.video?.url })
       fs.writeFileSync(path.join(dir, 'draft.mp4'),
         Buffer.from(await (await fetch(draft.data.video.url)).arrayBuffer()))
 
-      broadcastAll({ type: 'genState', status: 'DETAIL', label: 'Reading realistic depth…' })
+      jobUpdate(id, { label: 'Reading realistic depth…', status: 'DETAIL', position: null })
       console.log(`[gen ${id}] detail: depth-anything`)
       const da = await fal.subscribe('fal-ai/depth-anything-video', {
         input: { video_url: draft.data.video.url, model: 'VDA-Large', colormap: 'grayscale', resolution: 'auto' },
@@ -359,19 +407,20 @@ app.post('/api/generate', async (req, res) => {
       input.video_url = da.data.video.url
       input.resolution = '720p' // the detail pass should finish sharp
       input.video_quality = 'maximum'
-      broadcastAll({ type: 'genState', status: 'DETAIL', label: 'Final pass…' })
+      jobUpdate(id, { label: 'Final pass…', status: 'DETAIL', position: null })
     }
 
     falLog({ event: 'request', id, model, input: { ...input } })
     console.log(`[gen ${id}] ${frames.length} frames -> ${model}`)
 
     const t0 = Date.now()
+    if (!genJobs.get(id)?.label?.includes('Final')) jobUpdate(id, { label: 'Generating…' })
     const { data, requestId } = await fal.subscribe(model, {
       input,
       logs: true,
       onQueueUpdate: (u) => {
         console.log(`[gen ${id}] ${u.status}`)
-        broadcastAll({ type: 'genState', status: u.status, position: u.queue_position ?? null })
+        jobUpdate(id, { status: u.status, position: u.queue_position ?? null })
       },
     })
     const secs = ((Date.now() - t0) / 1000).toFixed(0)
@@ -383,8 +432,10 @@ app.post('/api/generate', async (req, res) => {
       const buf = Buffer.from(await (await fetch(data.video.url)).arrayBuffer())
       fs.writeFileSync(path.join(dir, 'result.mp4'), buf)
     }
+    jobEnd(id)
     res.json({ id, requestId, video: data?.video, local: `/sessions/${id}/result.mp4`, control: `/sessions/${id}/control.mp4` })
   } catch (err) {
+    jobEnd(id)
     falLog({ event: 'error', id, error: String(err) })
     console.error(`[gen ${id}] FAILED:`, err)
     res.status(500).json({ error: String(err?.message || err) })
@@ -407,6 +458,7 @@ function attachWss(server) {
   wss.on('connection', (ws) => {
     peers.add(ws)
     ws.role = '?'
+    if (genJobs.size) broadcastQueue() // late joiners see in-flight work
     ws.on('message', (data) => {
       const str = data.toString()
       if (str.startsWith('{"type":"hello"')) {

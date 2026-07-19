@@ -4,3 +4,5 @@ certs/
 sessions/
 out/
 *.log
+web/dist/
+.playwright-mcp/

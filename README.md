@@ -3,86 +3,101 @@
 **Direct AI video like a director, not a prompt engineer.**
 
 Text is a poor language for cinematography. Blocking gives directors back
-their native tools — **space, voice, and movement**:
+their native tools — **space, voice, and movement** — around one radically
+simple stage: **a single cube**.
 
-1. **Block** the scene by arranging humanoid proxies on a 3D gray-box stage.
-2. **Speak** the shot out loud; speech-to-text + an LLM turn the direction
-   into a structured shot spec. There is no prompt box.
-3. **Perform** the camera with your Android phone — WebXR streams its 6DoF
-   pose live, so you walk a dolly, arc, or crane with your body. Record
-   takes, keep the best.
-4. **Generate**: the chosen take renders as a depth-map video that
-   *constrains* generation (Wan VACE depth on [fal](https://fal.ai)) — the
-   output provably follows your camera trajectory and staging, shown
-   side-by-side with your previz.
+1. **Tell the cube what it is.** Click it; a toolbox sticks to it. Say or
+   type the subject ("a vintage red motorcycle, chrome tank"). Confirm, and
+   it docks into the main prompt as an attachment — like an image in a chat.
+2. **Perform the camera.** Your Android phone streams 6DoF over WebXR: walk
+   a dolly, arc, or crane around the cube with your body. The move is
+   analyzed into cinematographer language and docks in as a **motion
+   attachment** ("Dolly In Ease · 5.0s").
+3. **Set the look.** One line of atmosphere in the prompt bar — spoken or
+   typed — plus optional **reference images** for the shot's mood.
+4. **Send.** The take renders as a depth-map video that *constrains*
+   generation (Wan VACE depth on [fal](https://fal.ai)) — the output provably
+   follows your camera trajectory — and lands side-by-side with your previz.
 
 Built solo during the fal x Sequoia 72-Hour Video Hack (July 2026).
 
-## Beyond the single shot
+## The prompt bar is the product
 
-- **Exact / Beautiful** — two generation dials for one performance. *Exact*
-  constrains a depth model (Wan VACE) with your rendered take: frame-for-frame
-  obedience. *Beautiful* analyzes the take's 6DoF trajectory into numeric
+There is no prompt engineering, but there *is* one honest prompt — assembled
+from attachments the way a chat message collects images:
+
+```
+[⬛ object — from the cube] [📷 motion — from your body] [🖼 refs]
+ └ look & atmosphere line ................................. [Exact|Beautiful] [➤]
+```
+
+Each attachment is its own small system prompt with its own author: the cube
+holds the subject, your body writes the motion, the stills carry the mood.
+
+## Two dials, one performance
+
+- **Exact** — the performed take renders as MiDaS-style inverse-depth frames
+  sent with `preprocess: false`: the model receives the scene's actual
+  per-frame geometry and cannot ignore it. **2-pass detail** (default on)
+  fixes the primitive-proxy problem: a cheap draft pass turns the cube into
+  the real object, `depth-anything-video` reads *realistic* depth off the
+  draft, and the final 720p pass is constrained by that — your trajectory,
+  true silhouettes.
+- **Beautiful** — the take's 6DoF trajectory is decomposed into numeric
   features (dolly/truck/pan/orbit/easing/shake — signs resolved to words in
-  code, never by the LLM), phrases them as one cinematographer sentence, and
-  injects it into a frontier model (Seedance 2.0): intent-level obedience,
+  code, never by the LLM), phrased as one cinematographer sentence, and
+  injected into a frontier model (Seedance 2.0): intent-level obedience,
   frontier fidelity.
-- **Coverage** — one blocking, a whole multicam rig: wide, over-the-shoulder,
-  insert, and a slow arc are derived automatically from the scene geometry,
-  each generated from its own depth render of the *same* timeline, then
-  auto-edited into a multicam cut. Coverage and b-roll without re-performing
-  a single take — and with structural continuity, because every angle watches
-  the same 3D truth.
-
-## Why depth conditioning matters
-
-Every prompt-driven video tool treats camera direction as a suggestion.
-Blocking renders the performed take as MiDaS-style inverse-depth frames and
-sends them with `preprocess: false` — the model receives the scene's actual
-geometry per frame and cannot ignore it. The same mechanism makes the
-blocking authoritative: a crate placed between two actors *is* between them
-in the output. (Lesson learned on the way: depth silhouettes are taken
-literally — capsule proxies generate literal capsules, so the actor proxies
-are rough humanoid mannequins.)
 
 ## Architecture
 
 ```
-Desktop (three.js)                    Server (node)                fal
+Desktop (React + three.js)            Server (node)                fal
 ┌─────────────────────┐   WebSocket   ┌──────────────┐
-│ gray-box stage      │◄─────────────►│ ws relay     │
-│ blocking editor     │               │              │
-│ takes: rec/play     │   pose 60Hz   │              │◄── phone (Android
+│ the cube (subject)  │◄─────────────►│ ws relay     │
+│ cube toolbox        │               │              │
+│ prompt bar + chips  │   pose 60Hz   │              │◄── phone (Android
 │ PiP film camera     │◄──────────────│              │    Chrome, WebXR
 │ depth renderer      │               │              │    immersive-ar,
 │ voice capture       │               │              │    6DoF pose)
 └─────────┬───────────┘               └──────┬───────┘
-          │ 81 depth PNGs + shot spec        │
+          │ 81 depth PNGs + assembled prompt │
           └──────────────► /api/generate ────┤ ffmpeg → depth.mp4
-                           /api/direct  ─────┼─► openrouter/router (shot spec)
+                           /api/camera-language ─► openrouter/router
                            /api/transcribe ──┼─► wizper (STT fallback)
+                           /api/upload-ref ──┼─► fal storage (ref stills)
                                              └─► wan-22-vace-fun-a14b/depth
-                                                 (preprocess: false)
+                                                 (preprocess: false,
+                                                  ref_image_urls,
+                                                  2-pass via
+                                                  depth-anything-video)
 ```
 
 - **Pose calibration**: yaw-only correction anchors the phone's start pose to
   the camera mark — gravity stays honest, drift re-zeroes on demand. A move
   scale dial turns room-scale steps into crane moves.
-- **Takes are data**: each take is a timestamped 6DoF pose stream, resampled
-  to 81 frames at 16fps for the control video.
-- **Voice → spec**: Web Speech API (or MediaRecorder → Wizper) → Gemini
-  Flash via fal's OpenRouter endpoint → structured spec (setting, subjects,
-  action, lighting, mood, style) shown as chips, assembled into the final
-  video prompt. ~$0.0007 per direction.
+- **Takes are data**: a take is a timestamped 6DoF pose stream, resampled to
+  81 frames at 16fps for the control video. The latest take *is* the motion
+  attachment; re-record to replace it, click the chip to replay it.
+- **Voice is raw**: transcripts (Web Speech API, or MediaRecorder → Wizper)
+  land directly in the field you spoke into — you confirm, no LLM rewriting
+  between you and your own words.
 - Every fal call is appended to `sessions/fal-log.jsonl`.
 
 ## Run
 
 ```sh
 npm install
+npm run build    # vite-builds the React director app into web/dist
 npm run cert     # self-signed TLS — WebXR requires a secure context
 FAL_KEY=... npm start
 ```
+
+The director app is React (Vite) in `web/`; the three.js stage lives in
+`web/src/engine.js` as an imperative engine the components drive. The phone
+capture page (`public/phone.html`) stays deliberately build-free. During UI
+work, `npm run dev` serves the app with hot reload, proxying API + WebSocket
+to a running `npm start`.
 
 Desktop: `http://<host>:8000` · Phone: **Pair phone** → scan the QR with
 Android Chrome (accept the certificate warning on the https URL, or allowlist
