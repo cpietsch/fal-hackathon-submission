@@ -17,7 +17,7 @@ export function GenProgress({ label, queuePos, t0 }: { label: string; queuePos: 
       <div className="row">
         <i className="pulse" />
         <span>{label}</span>
-        {queuePos != null && <span className="queue">queue #{queuePos}</span>}
+        {queuePos != null && <span className="queue">#{queuePos}</span>}
         <span className="elapsed">{elapsed}</span>
       </div>
       <div className="track"><div className="fill" /></div>
