@@ -236,6 +236,34 @@ app.post('/api/camera-language', async (req, res) => {
   }
 })
 
+// multicam cut: same timeline, switching angles — session ids in cut order
+app.post('/api/multicut', async (req, res) => {
+  const { ids } = req.body || {}
+  if (!Array.isArray(ids) || ids.length < 2) return res.status(400).json({ error: 'need >=2 session ids' })
+  const clips = ids.map((id) => path.join(sessionsDir, String(id), 'result.mp4'))
+  if (!clips.every((c) => fs.existsSync(c))) return res.status(400).json({ error: 'missing result.mp4' })
+  try {
+    const T = 81 / 16 // shared coverage timeline (s)
+    const n = clips.length
+    const seg = T / n
+    const id = `${new Date().toISOString().replace(/[:.]/g, '-')}-multicut`
+    const dir = path.join(sessionsDir, id)
+    fs.mkdirSync(dir, { recursive: true })
+    const inputs = clips.flatMap((c) => ['-i', c])
+    const trims = clips.map((_, i) =>
+      `[${i}:v]trim=start=${(i * seg).toFixed(3)}:end=${((i + 1) * seg).toFixed(3)},setpts=PTS-STARTPTS[v${i}]`).join(';')
+    const concat = clips.map((_, i) => `[v${i}]`).join('') + `concat=n=${n}:v=1[out]`
+    await runFfmpeg(['-y', ...inputs, '-filter_complex', `${trims};${concat}`, '-map', '[out]',
+      '-c:v', 'libx264', '-crf', '18', '-pix_fmt', 'yuv420p', path.join(dir, 'result.mp4')])
+    fs.copyFileSync(path.join(sessionsDir, String(ids[0]), 'control.mp4'), path.join(dir, 'control.mp4'))
+    falLog({ event: 'multicut', id, ids })
+    res.json({ id, result: `/sessions/${id}/result.mp4` })
+  } catch (err) {
+    console.error('[multicut] FAILED:', err)
+    res.status(500).json({ error: String(err?.message || err) })
+  }
+})
+
 // save a client-side recording (previz/take exports, demo captures)
 app.post('/api/dev-save', (req, res) => {
   const { name, data } = req.body || {}

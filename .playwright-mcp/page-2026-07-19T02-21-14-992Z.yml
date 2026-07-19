@@ -1,0 +1,29 @@
+- generic [active] [ref=f12e1]:
+  - generic [ref=f12e4]:
+    - generic [ref=f12e5]: BLOCKING
+    - generic [ref=f12e6]: direct, don't prompt
+    - generic [ref=f12e7]: phone
+    - generic [ref=f12e9]: fal
+    - button "Pair phone" [ref=f12e11] [cursor=pointer]
+    - button "Re-zero" [ref=f12e12] [cursor=pointer]
+  - generic [ref=f12e13]:
+    - button "+ Actor" [ref=f12e14] [cursor=pointer]
+    - button "+ Prop" [ref=f12e15] [cursor=pointer]
+    - button "+ Wall" [ref=f12e16] [cursor=pointer]
+    - button "Sim camera" [ref=f12e17] [cursor=pointer]
+    - generic [ref=f12e18]:
+      - generic [ref=f12e19]: move ×
+      - slider [ref=f12e20]: "1"
+      - generic [ref=f12e21]: "1"
+    - generic [ref=f12e22]: drag move · Q/E rotateDel delete · click PiP swap
+  - generic [ref=f12e23]:
+    - heading "SHOT" [level=3] [ref=f12e24]
+    - button "🎙 Speak the shot" [ref=f12e25] [cursor=pointer]
+    - generic [ref=f12e27]:
+      - button "Exact" [ref=f12e28] [cursor=pointer]
+      - button "Beautiful" [ref=f12e29] [cursor=pointer]
+    - button "Generate" [disabled] [ref=f12e30]
+    - button "🎥 Coverage" [ref=f12e31] [cursor=pointer]
+  - generic [ref=f12e32]:
+    - button "Record a take" [ref=f12e33] [cursor=pointer]
+    - generic [ref=f12e35]: 0.0s

@@ -431,9 +431,10 @@ const depthMat = new THREE.ShaderMaterial({
     }`,
 })
 
-// MiDaS-style inverse depth (white = near) rendered from the chosen take,
-// resampled to exactly `n` frames (VACE minimum is 81).
-function renderDepthFrames(take, n = 81) {
+// MiDaS-style inverse depth (white = near) rendered from a pose sampler,
+// exactly `n` frames (VACE minimum is 81). poseAt(u, cam) poses the camera
+// for normalized time u ∈ [0,1].
+function renderDepthFramesFrom(poseAt, n = 81) {
   const W = 832
   const H = 480
   const cv = document.createElement('canvas')
@@ -457,7 +458,7 @@ function renderDepthFrames(take, n = 81) {
 
   const frames = []
   for (let i = 0; i < n; i++) {
-    samplePose(take, (i / (n - 1)) * take.dur, cam2)
+    poseAt(i / (n - 1), cam2)
     cam2.updateMatrixWorld()
     r2.render(scene, cam2)
     frames.push(cv.toDataURL('image/png'))
@@ -472,6 +473,10 @@ function renderDepthFrames(take, n = 81) {
   camBody.visible = restore.body
   r2.dispose()
   return frames
+}
+
+function renderDepthFrames(take, n = 81) {
+  return renderDepthFramesFrom((u, cam) => samplePose(take, u * take.dur, cam), n)
 }
 
 const DEFAULT_PROMPT = 'Two figures in long dark coats stand facing each other in an empty concrete '
@@ -539,6 +544,112 @@ function showResult(out, prompt) {
   dl.href = out.local || out.video?.url || '#'
   document.getElementById('resultModal').classList.add('open')
   Promise.all([vc.play(), vr.play()]).catch(() => {})
+}
+
+// ---------------------------------------------------------------- coverage (multicam)
+// One scene, several cameras derived from the blocking — every angle renders
+// the same 3D truth, so the coverage set is geometrically consistent.
+function coverageRig() {
+  const actors = stage.children.filter((g) => g.userData.kind === 'actor')
+  const props = stage.children.filter((g) => g.userData.kind === 'prop')
+  if (!stage.children.length) return []
+
+  const c = new THREE.Vector3()
+  stage.children.forEach((g) => c.add(g.position))
+  c.divideScalar(stage.children.length)
+  c.y = 1.1
+
+  let axis = new THREE.Vector3(1, 0, 0)
+  if (actors.length >= 2) {
+    axis = actors[1].position.clone().sub(actors[0].position).setY(0).normalize()
+  }
+  const perp = new THREE.Vector3(-axis.z, 0, axis.x)
+  if (perp.z < 0) perp.negate() // shoot from the "front" side
+
+  let span = 2
+  stage.children.forEach((g) => { span = Math.max(span, g.position.distanceTo(c) * 2) })
+
+  const push = (from, dir, amt, look) => (u, cam) => {
+    cam.position.copy(from).addScaledVector(dir, amt * u)
+    cam.lookAt(look)
+  }
+  const angles = []
+
+  const wideFrom = c.clone().addScaledVector(perp, span * 1.4 + 2.6).setY(1.7)
+  const wideDir = c.clone().sub(wideFrom).setY(0).normalize()
+  angles.push({ key: 'wide', hint: 'wide establishing shot', poseAt: push(wideFrom, wideDir, 0.4, c) })
+
+  if (actors.length >= 2) {
+    const a = actors[0].position
+    const b = actors[1].position
+    const back = a.clone().sub(b).setY(0).normalize()
+    const otsFrom = a.clone().addScaledVector(back, 0.65).addScaledVector(perp, 0.6).setY(1.72)
+    const look = b.clone().setY(1.42)
+    const otsDir = look.clone().sub(otsFrom).setY(0).normalize()
+    angles.push({ key: 'ots', hint: 'over-the-shoulder shot, shallow depth of field', poseAt: push(otsFrom, otsDir, 0.18, look) })
+  }
+  if (props.length) {
+    const t = props[0].position.clone().setY(0.5)
+    const insFrom = t.clone().addScaledVector(perp, 2.4).addScaledVector(axis, 0.5).setY(1.15)
+    const insDir = t.clone().sub(insFrom).normalize()
+    angles.push({ key: 'insert', hint: 'medium close-up on the object, shallow depth of field', poseAt: push(insFrom, insDir, 0.3, t) })
+  }
+  { // slow-arc b-roll
+    const r = span * 0.9 + 1.8
+    const a0 = Math.atan2(perp.x, perp.z) - 0.35
+    angles.push({
+      key: 'orbit', hint: 'slow cinematic arc, b-roll',
+      poseAt: (u, cam) => {
+        const a = a0 + u * 0.28
+        cam.position.set(c.x + Math.sin(a) * r, 1.45, c.z + Math.cos(a) * r)
+        cam.lookAt(c)
+      },
+    })
+  }
+  return angles
+}
+
+async function coverage() {
+  if (generating) return toast('Already generating…')
+  const rig = coverageRig()
+  if (!rig.length) return toast('Nothing on stage to cover')
+  const basePrompt = shotSpec.prompt || DEFAULT_PROMPT
+  generating = true
+  const covBtn = document.getElementById('covBtn')
+  covBtn.textContent = 'Rendering rig…'
+  try {
+    await new Promise((r) => setTimeout(r, 30))
+    const renders = rig.map((angle) => ({ angle, frames: renderDepthFramesFrom(angle.poseAt) }))
+    covBtn.textContent = `Generating ${rig.length} angles…`
+    toast(`Coverage: ${rig.map((a) => a.key).join(' · ')}`)
+    const results = await Promise.all(renders.map(({ angle, frames }) =>
+      fetch('/api/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ frames, prompt: `${basePrompt}, ${angle.hint}`, fps: 16 }),
+      }).then(async (r) => {
+        const out = await r.json()
+        if (!r.ok) throw new Error(`${angle.key}: ${out.error || r.statusText}`)
+        return { key: angle.key, ...out }
+      }),
+    ))
+    covBtn.textContent = 'Cutting…'
+    const cut = await fetch('/api/multicut', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids: results.map((r) => r.id) }),
+    }).then((r) => r.json())
+    if (cut.error) throw new Error(cut.error)
+    showResult({ control: results[0].control, local: cut.result }, `${basePrompt} — multicam cut (${results.length} angles)`)
+    toast('Coverage cut ready — every angle is in the dailies too')
+    return { results, cut }
+  } catch (err) {
+    console.error(err)
+    toast(`Coverage failed: ${err.message}`)
+  } finally {
+    generating = false
+    covBtn.textContent = '🎥 Coverage'
+  }
 }
 
 // ---------------------------------------------------------------- voice direction
@@ -696,8 +807,10 @@ async function updateCameraLanguage() {
 window.__blocking = {
   generate, renderDepthFrames, takes: () => takes,
   setSpec: (s) => { shotSpec = s }, onTranscript, sceneSummary, showResult,
-  cameraLanguage: () => cameraLanguage, updateCameraLanguage,
+  cameraLanguage: () => cameraLanguage, updateCameraLanguage, coverage, coverageRig,
+  renderDepthFramesFrom,
 }
+document.getElementById('covBtn').onclick = () => coverage()
 
 // ---------------------------------------------------------------- UI chrome
 function send(obj) { if (ws.open) ws.sock.send(JSON.stringify(obj)) }
