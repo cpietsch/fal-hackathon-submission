@@ -149,6 +149,10 @@
       <button id="modeExact" class="active" style="flex:1; border:none; border-radius:0;" title="Depth-constrained (Wan VACE): follows your camera frame-for-frame">Exact</button>
       <button id="modeBeautiful" style="flex:1; border:none; border-radius:0;" title="Camera language on Seedance 2.0: follows the intent of your move, frontier fidelity">Beautiful</button>
     </div>
+    <label id="detailRow" style="display:flex; align-items:center; gap:6px; font-size:11px; color:var(--dim); margin-bottom:6px; cursor:pointer;">
+      <input type="checkbox" id="detailChk" style="accent-color:var(--accent);" />
+      2-pass detail (draft → realistic depth → final)
+    </label>
     <button id="genBtn" disabled title="Needs a chosen take + FAL_KEY">Generate</button>
     <button id="covBtn" style="width:100%; margin-top:6px;" title="Generate wide / OTS / insert / arc from this blocking, plus an automatic multicam cut">🎥 Coverage</button>
   </div>

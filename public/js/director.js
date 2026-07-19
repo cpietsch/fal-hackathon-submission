@@ -254,9 +254,8 @@ function connectWS() {
     try { m = JSON.parse(ev.data) } catch { return }
     if (m.type === 'presence') dotPhone.classList.toggle('on', m.roles.includes('camera'))
     else if (m.type === 'genState' && generating) {
-      genBtn.textContent = m.status === 'IN_QUEUE'
-        ? `In queue${m.position != null ? ` #${m.position}` : ''}…`
-        : 'Rendering on fal…'
+      genBtn.textContent = m.label
+        || (m.status === 'IN_QUEUE' ? `In queue${m.position != null ? ` #${m.position}` : ''}…` : 'Rendering on fal…')
     }
     else if (m.type === 'pose') onPose(m)
     else if (m.type === 'record') setRecording(m.on)
@@ -511,7 +510,7 @@ async function generate(promptOverride) {
     const resp = await fetch('/api/generate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ frames, prompt, fps: 16, mode: genMode }),
+      body: JSON.stringify({ frames, prompt, fps: 16, mode: genMode, detail: document.getElementById('detailChk').checked }),
     })
     const out = await resp.json()
     if (!resp.ok) throw new Error(out.error || resp.statusText)

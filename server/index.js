@@ -332,7 +332,35 @@ app.post('/api/generate', async (req, res) => {
           resolution,
           aspect_ratio: '16:9',
         }
-    falLog({ event: 'request', id, model, input: { ...input, video_url: controlUrl } })
+    // Optional second depth pass (Christopher's insight): primitive-proxy depth
+    // maps 1:1 into stiff, generic bodies. Bootstrap instead: cheap draft pass
+    // (mannequins become real coated humans + an invented environment), read
+    // realistic depth back off the draft, and constrain the final pass with
+    // THAT — trajectory preserved, silhouettes now human, scene depth rich.
+    if (mode === 'exact' && req.body.detail) {
+      broadcastAll({ type: 'genState', status: 'DETAIL', label: 'Draft pass…' })
+      console.log(`[gen ${id}] detail: draft pass`)
+      const draft = await fal.subscribe(model, {
+        input: { ...input, resolution: '480p' },
+        onQueueUpdate: (u) => broadcastAll({ type: 'genState', status: u.status, position: u.queue_position ?? null, label: `Draft: ${u.status}` }),
+      })
+      falLog({ event: 'detail-draft', id, requestId: draft.requestId, video: draft.data?.video?.url })
+      fs.writeFileSync(path.join(dir, 'draft.mp4'),
+        Buffer.from(await (await fetch(draft.data.video.url)).arrayBuffer()))
+
+      broadcastAll({ type: 'genState', status: 'DETAIL', label: 'Reading realistic depth…' })
+      console.log(`[gen ${id}] detail: depth-anything`)
+      const da = await fal.subscribe('fal-ai/depth-anything-video', {
+        input: { video_url: draft.data.video.url, model: 'VDA-Large', colormap: 'grayscale', resolution: 'auto' },
+      })
+      falLog({ event: 'detail-depth', id, requestId: da.requestId, video: da.data?.video?.url })
+      fs.writeFileSync(path.join(dir, 'depth-enriched.mp4'),
+        Buffer.from(await (await fetch(da.data.video.url)).arrayBuffer()))
+      input.video_url = da.data.video.url
+      broadcastAll({ type: 'genState', status: 'DETAIL', label: 'Final pass…' })
+    }
+
+    falLog({ event: 'request', id, model, input: { ...input } })
     console.log(`[gen ${id}] ${frames.length} frames -> ${model}`)
 
     const t0 = Date.now()

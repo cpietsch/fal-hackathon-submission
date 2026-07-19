@@ -1,0 +1,32 @@
+- generic [active] [ref=f14e1]:
+  - generic [ref=f14e4]:
+    - generic [ref=f14e5]: BLOCKING
+    - generic [ref=f14e6]: direct, don't prompt
+    - generic [ref=f14e7]: phone
+    - generic [ref=f14e9]: fal
+    - button "Pair phone" [ref=f14e11] [cursor=pointer]
+    - button "Re-zero" [ref=f14e12] [cursor=pointer]
+  - generic [ref=f14e13]:
+    - button "+ Actor" [ref=f14e14] [cursor=pointer]
+    - button "+ Prop" [ref=f14e15] [cursor=pointer]
+    - button "+ Wall" [ref=f14e16] [cursor=pointer]
+    - button "Sim camera" [ref=f14e17] [cursor=pointer]
+    - generic [ref=f14e18]:
+      - generic [ref=f14e19]: move ×
+      - slider [ref=f14e20]: "1"
+      - generic [ref=f14e21]: "1"
+    - generic [ref=f14e22]: drag move · Q/E rotateDel delete · click PiP swap
+  - generic [ref=f14e23]:
+    - heading "SHOT" [level=3] [ref=f14e24]
+    - button "🎙 Speak the shot" [ref=f14e25] [cursor=pointer]
+    - generic [ref=f14e27]:
+      - button "Exact" [ref=f14e28] [cursor=pointer]
+      - button "Beautiful" [ref=f14e29] [cursor=pointer]
+    - generic [ref=f14e30] [cursor=pointer]:
+      - checkbox "2-pass detail (draft → realistic depth → final)" [ref=f14e31]
+      - text: 2-pass detail (draft → realistic depth → final)
+    - button "Generate" [disabled] [ref=f14e32]
+    - button "🎥 Coverage" [ref=f14e33] [cursor=pointer]
+  - generic [ref=f14e34]:
+    - button "Record a take" [ref=f14e35] [cursor=pointer]
+    - generic [ref=f14e37]: 0.0s
