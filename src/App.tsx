@@ -31,7 +31,6 @@ export default function App() {
   const [objectPrompt, setObjectPromptState] = useState('') // session-only, empty on every load
   const [refs, setRefs] = useState<string[]>([])
   const [mainText, setMainText] = useState('')
-  const [genMode, setGenMode] = useState<'exact' | 'beautiful'>('exact')
   const [generating, setGenerating] = useState(false)
   const [genInfo, setGenInfo] = useState<{ label: string; queuePos: number | null; t0: number } | null>(null)
   const [covStatus, setCovStatus] = useState<string | null>(null)
@@ -52,11 +51,11 @@ export default function App() {
   // live mirror of state for stage/ws callbacks created on the first render
   const live = useRef({
     takes, chosenId, cameraLanguage, objectPrompt, refs, mainText,
-    genMode, generating, recording, boxOpen,
+    generating, recording, boxOpen,
   })
   live.current = {
     takes, chosenId, cameraLanguage, objectPrompt, refs, mainText,
-    genMode, generating, recording, boxOpen,
+    generating, recording, boxOpen,
   }
 
   const toastTimer = useRef(0)
@@ -306,7 +305,7 @@ export default function App() {
     const take = live.current.takes.find((t) => t.id === live.current.chosenId)
     if (!take) { toast('Record a camera take first — the motion is part of the prompt'); return }
     let prompt = promptOverride || composePrompt()
-    if (live.current.genMode === 'beautiful' && live.current.cameraLanguage?.camera_prompt) {
+    if (live.current.cameraLanguage?.camera_prompt) {
       prompt += ` Camera: ${live.current.cameraLanguage.camera_prompt}`
     }
     setGenerating(true)
@@ -320,7 +319,7 @@ export default function App() {
       const resp = await fetch('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ frames, prompt, fps: 16, mode: live.current.genMode, refs: live.current.refs }),
+        body: JSON.stringify({ frames, prompt, fps: 16, mode: 'beautiful', refs: live.current.refs }),
       })
       const out = await resp.json()
       if (!resp.ok) throw new Error(out.error || resp.statusText)
@@ -355,7 +354,7 @@ export default function App() {
         fetch('/api/generate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ frames, prompt: `${basePrompt}, ${angle.hint}`, fps: 16 }),
+          body: JSON.stringify({ frames, prompt: `${basePrompt}, ${angle.hint}`, fps: 16, mode: 'beautiful' }),
         }).then(async (r) => {
           const out = await r.json()
           if (!r.ok) throw new Error(`${angle.key}: ${out.error || r.statusText}`)
@@ -525,14 +524,6 @@ export default function App() {
           onClick={() => startRecordFlow(!(recording || countdown !== null))}>
           <Disc className="icon" /><span id="recLabel">{recLabel}</span>
         </button>
-        <div id="modeRow">
-          <button id="modeExact" className={genMode === 'exact' ? 'active' : ''}
-            title="Depth-constrained (Wan VACE): follows your camera frame-for-frame"
-            onClick={() => setGenMode('exact')}>Exact</button>
-          <button id="modeBeautiful" className={genMode === 'beautiful' ? 'active' : ''}
-            title="Camera language on a frontier model: follows the intent of your move"
-            onClick={() => setGenMode('beautiful')}>Beautiful</button>
-        </div>
         <button id="covBtn" style={{ width: '100%', marginTop: 6 }}
           title="Generate wide / insert / arc from this blocking, plus an automatic multicam cut"
           onClick={coverage}>
