@@ -7,11 +7,10 @@ const renderer = new THREE.WebGLRenderer({ antialias: true })
 renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5))
 renderer.shadowMap.enabled = true
 renderer.shadowMap.type = THREE.PCFShadowMap
-// shadows only change when stage objects move — re-render the map on demand,
+// shadows only change when the stage changes — re-render the map on demand,
 // not twice per frame (main + PiP pass)
 renderer.shadowMap.autoUpdate = false
 renderer.shadowMap.needsUpdate = true
-const shadowsDirty = () => { renderer.shadowMap.needsUpdate = true }
 view.appendChild(renderer.domElement)
 
 const scene = new THREE.Scene()
@@ -64,75 +63,30 @@ const camBody = new THREE.Group()
 }
 scene.add(camBody)
 
-// ---------------------------------------------------------------- stage objects
+// ---------------------------------------------------------------- the cube
+// One centered proxy object. Its meaning lives in a prompt the director
+// attaches by clicking it — the depth silhouette stays a cube.
 const stage = new THREE.Group()
 scene.add(stage)
+const cubeGroup = new THREE.Group()
+const cube = new THREE.Mesh(
+  new THREE.BoxGeometry(1, 1, 1),
+  new THREE.MeshStandardMaterial({ color: 0x8a7a62, roughness: 0.85 }),
+)
+cube.position.y = 0.5
+cube.castShadow = cube.receiveShadow = true
+cubeGroup.add(cube)
+cubeGroup.userData = { kind: 'prop', id: 1 }
+stage.add(cubeGroup)
 
-const PALETTE = { actor: 0x8f97a3, prop: 0x8a7a62, wall: 0x565c66 }
-let counter = 0
+let objectPrompt = localStorage.getItem('blocking-object-v1') || ''
 
-function makeObject(kind) {
-  const g = new THREE.Group()
-  if (kind === 'actor') {
-    // rough humanoid mannequin — the depth silhouette must read "person",
-    // a plain capsule gets textured as a literal capsule by VACE
-    const m = mat(kind)
-    const add = (geo, x, y, z, rz = 0) => {
-      const p = new THREE.Mesh(geo, m)
-      p.position.set(x, y, z)
-      p.rotation.z = rz
-      g.add(p)
-    }
-    add(new THREE.SphereGeometry(0.11, 16, 12), 0, 1.62, 0) // head
-    add(new THREE.CapsuleGeometry(0.17, 0.42, 6, 12), 0, 1.18, 0) // torso
-    add(new THREE.CapsuleGeometry(0.055, 0.48, 4, 8), -0.23, 1.1, 0, 0.06) // arms close to torso —
-    add(new THREE.CapsuleGeometry(0.055, 0.48, 4, 8), 0.23, 1.1, 0, -0.06) // separated limbs render as tubes in close shots
-    add(new THREE.CapsuleGeometry(0.07, 0.72, 4, 8), -0.1, 0.45, 0) // legs
-    add(new THREE.CapsuleGeometry(0.07, 0.72, 4, 8), 0.1, 0.45, 0)
-    add(new THREE.BoxGeometry(0.06, 0.06, 0.08), 0, 1.62, -0.13) // face marker
-    g.children[g.children.length - 1].userData.editorOnly = true // keep out of depth pass
-  } else if (kind === 'prop') {
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.9, 0.9), mat(kind))
-    mesh.position.y = 0.45
-    g.add(mesh)
-  } else {
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(3, 2.5, 0.12), mat(kind))
-    mesh.position.y = 1.25
-    g.add(mesh)
-  }
-  g.traverse((o) => { if (o.isMesh) o.castShadow = o.receiveShadow = true })
-  g.userData = { kind, id: ++counter }
-  return g
-}
-function mat(kind) {
-  return new THREE.MeshStandardMaterial({ color: PALETTE[kind], roughness: 0.85 })
-}
+const icon = (n) => `<svg class="icon" aria-hidden="true"><use href="#i-${n}"/></svg>`
 
-function addObject(kind, x = 0, z = 0) {
-  const g = makeObject(kind)
-  g.position.set(x, 0, z)
-  stage.add(g)
-  shadowsDirty()
-  select(g)
-  saveScene()
-  return g
-}
-
-// ---------------------------------------------------------------- selection & drag
-let selected = null
+// ---------------------------------------------------------------- cube toolbox
 const ray = new THREE.Raycaster()
-const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)
-let dragging = false
-const dragOffset = new THREE.Vector3()
-
-function select(g) {
-  if (selected) setEmissive(selected, 0x000000)
-  selected = g
-  if (g) setEmissive(g, 0x7a4d00)
-}
-function setEmissive(g, color) {
-  g.traverse((o) => o.isMesh && o.material.emissive.setHex(color))
-}
+const cubeBox = document.getElementById('cubeBox')
+const cubePrompt = document.getElementById('cubePrompt')
 
 function pointerRay(e) {
   const r = renderer.domElement.getBoundingClientRect()
@@ -144,82 +98,52 @@ function pointerRay(e) {
   return ray
 }
 
+function setCubeBox(open) {
+  cubeBox.classList.toggle('open', open)
+  cube.material.emissive.setHex(open ? 0x7a4d00 : 0x000000)
+  if (open) {
+    cubePrompt.value = objectPrompt
+    positionCubeBox()
+    cubePrompt.focus()
+  }
+}
+function positionCubeBox() {
+  const w = renderer.domElement.clientWidth
+  const h = renderer.domElement.clientHeight
+  const v = cube.getWorldPosition(new THREE.Vector3()).setY(1.1).project(swapped ? filmCam : editorCam)
+  const x = (v.x + 1) / 2 * w
+  const y = (1 - v.y) / 2 * h
+  cubeBox.style.left = `${Math.min(w - 270, Math.max(10, x + 28))}px`
+  cubeBox.style.top = `${Math.min(h - 190, Math.max(10, y - 70))}px`
+}
+document.getElementById('cubeOk').onclick = () => {
+  objectPrompt = cubePrompt.value.trim()
+  localStorage.setItem('blocking-object-v1', objectPrompt)
+  setCubeBox(false)
+  renderAttachments()
+  toast(objectPrompt ? 'Object attached to the main prompt' : 'Object cleared')
+}
+cubePrompt.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') setCubeBox(false)
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); document.getElementById('cubeOk').click() }
+})
+
+const keys = new Set()
 renderer.domElement.addEventListener('pointerdown', (e) => {
   if (inPip(e)) { setSwapped(!swapped); return }
   if (swapped || simMode) { toast('Editing is locked while flying — exit Camera view / Fly controls first'); return }
   const hits = pointerRay(e).intersectObjects(stage.children, true)
-  if (hits.length) {
-    let g = hits[0].object
-    while (g.parent !== stage) g = g.parent
-    select(g)
-    const p = new THREE.Vector3()
-    pointerRay(e).ray.intersectPlane(groundPlane, p)
-    dragOffset.copy(g.position).sub(p)
-    dragging = true
-    controls.enabled = false
-  } else {
-    select(null)
-  }
+  setCubeBox(hits.length > 0)
 })
 renderer.domElement.addEventListener('pointermove', (e) => {
   renderer.domElement.style.cursor = inPip(e) ? 'pointer' : ''
-  if (!dragging || !selected) return
-  const p = new THREE.Vector3()
-  if (pointerRay(e).ray.intersectPlane(groundPlane, p)) {
-    selected.position.set(
-      THREE.MathUtils.clamp(p.x + dragOffset.x, -14, 14), 0,
-      THREE.MathUtils.clamp(p.z + dragOffset.z, -14, 14),
-    )
-    shadowsDirty()
-  }
 })
-addEventListener('pointerup', () => {
-  if (dragging) saveScene()
-  dragging = false
-  controls.enabled = true
-})
-
 addEventListener('keydown', (e) => {
-  if (e.target.tagName === 'INPUT') return
-  if (selected && (e.key === 'q' || e.key === 'Q')) { selected.rotation.y += Math.PI / 12; shadowsDirty(); saveScene() }
-  if (selected && (e.key === 'e' || e.key === 'E')) { selected.rotation.y -= Math.PI / 12; shadowsDirty(); saveScene() }
-  if (selected && (e.key === 'Delete' || e.key === 'Backspace')) {
-    stage.remove(selected); shadowsDirty(); select(null); saveScene()
-  }
-  if (e.key === 'Escape') select(null)
+  if (/INPUT|TEXTAREA/.test(e.target.tagName)) return
+  if (e.key === 'Escape') setCubeBox(false)
   keys.add(e.code)
 })
 addEventListener('keyup', (e) => keys.delete(e.code))
-const keys = new Set()
-
-// scene persistence (objects only)
-function saveScene() {
-  const objs = stage.children.map((g) => ({
-    kind: g.userData.kind, x: g.position.x, z: g.position.z, ry: g.rotation.y,
-  }))
-  localStorage.setItem('blocking-scene-v1', JSON.stringify(objs))
-}
-function loadScene() {
-  try {
-    const objs = JSON.parse(localStorage.getItem('blocking-scene-v1') || 'null')
-    if (!objs || !objs.length) throw 0
-    for (const o of objs) {
-      const g = makeObject(o.kind)
-      g.position.set(o.x, 0, o.z)
-      g.rotation.y = o.ry
-      stage.add(g)
-    }
-    shadowsDirty()
-  } catch {
-    // default scene: two actors facing each other, a prop between
-    addObject('actor', -1.1, 0).rotation.y = -Math.PI / 2
-    addObject('actor', 1.1, 0).rotation.y = Math.PI / 2
-    addObject('prop', 0, -1.6)
-    select(null)
-    saveScene()
-  }
-}
-loadScene()
 
 // ---------------------------------------------------------------- PiP views
 let swapped = false // false: editor main + film PiP · true: film main + editor PiP
@@ -282,9 +206,9 @@ function connectWS() {
     try { m = JSON.parse(ev.data) } catch { return }
     if (m.type === 'presence') setPhoneConn(m.roles.includes('camera'))
     else if (m.type === 'genState' && generating) {
-      genLabel.textContent = m.status === 'IN_QUEUE'
+      setPromptBusy(true, m.status === 'IN_QUEUE'
         ? `In queue${m.position != null ? ` #${m.position}` : ''}…`
-        : 'Rendering on fal…'
+        : 'Rendering on fal…')
     }
     else if (m.type === 'pose') onPose(m)
     else if (m.type === 'record') setRecording(m.on)
@@ -346,8 +270,10 @@ function setSwapped(on) {
   camViewBtn.classList.toggle('active', on)
   setSim(on)
   updatePipFrame()
+  if (on) setCubeBox(false)
 }
 camViewBtn.onclick = () => setSwapped(!swapped)
+
 const simEuler = new THREE.Euler(0, 0, 0, 'YXZ')
 function simTick(dt) {
   const sp = (keys.has('ShiftLeft') ? 3.2 : 1.4) * dt
@@ -376,8 +302,6 @@ function simTick(dt) {
 }
 
 // ---------------------------------------------------------------- takes
-const icon = (n) => `<svg class="icon" aria-hidden="true"><use href="#i-${n}"/></svg>`
-
 const takes = []
 let chosenId = null
 let recording = false
@@ -424,7 +348,7 @@ function renderTakes() {
     play.onclick = () => { playback = { take: t, t0: performance.now() } }
     const use = document.createElement('button')
     use.innerHTML = icon('check')
-    use.title = 'Use this take for generation'
+    use.title = 'Use this take as the motion'
     use.onclick = () => { chosenId = t.id; renderTakes(); updateCameraLanguage() }
     const del = document.createElement('button')
     del.innerHTML = icon('x')
@@ -433,11 +357,12 @@ function renderTakes() {
       takes.splice(takes.indexOf(t), 1)
       if (chosenId === t.id) chosenId = takes.length ? takes[takes.length - 1].id : null
       renderTakes()
+      updateCameraLanguage()
     }
     el.append(play, use, del)
     takesEl.append(el)
   }
-  document.getElementById('genBtn').disabled = chosenId === null
+  renderAttachments()
 }
 
 function samplePose(take, tSec, cam) {
@@ -461,7 +386,30 @@ function playbackTick() {
   samplePose(take, t, filmCam)
 }
 
-// ---------------------------------------------------------------- depth render + generate
+// the performed move, translated to cinematographer language — shown on the
+// motion attachment and injected into the prompt in Beautiful mode
+let cameraLanguage = null
+async function updateCameraLanguage() {
+  const take = takes.find((t) => t.id === chosenId)
+  cameraLanguage = null
+  renderAttachments()
+  if (!take) return
+  const forId = chosenId
+  try {
+    const r = await fetch('/api/camera-language', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ frames: take.frames }),
+    })
+    const out = await r.json()
+    if (!r.ok) throw new Error(out.error || r.statusText)
+    if (chosenId === forId) { cameraLanguage = out; renderAttachments() }
+  } catch (err) {
+    console.error(err)
+  }
+}
+
+// ---------------------------------------------------------------- depth render
 const depthMat = new THREE.ShaderMaterial({
   uniforms: { uNear: { value: 1.0 }, uFar: { value: 25 } },
   vertexShader: `varying float vZ;
@@ -491,12 +439,12 @@ function renderDepthFramesFrom(poseAt, n = 81) {
   const restore = {
     fog: scene.fog, bg: scene.background,
     grid: grid.visible, helper: camHelper.visible, body: camBody.visible,
+    emissive: cube.material.emissive.getHex(),
   }
   scene.fog = null
   scene.background = new THREE.Color(0x000000)
   grid.visible = camHelper.visible = camBody.visible = false
-  const editorOnly = []
-  stage.traverse((o) => { if (o.userData?.editorOnly && o.visible) { o.visible = false; editorOnly.push(o) } })
+  cube.material.emissive.setHex(0x000000)
   scene.overrideMaterial = depthMat
 
   const frames = []
@@ -508,12 +456,12 @@ function renderDepthFramesFrom(poseAt, n = 81) {
   }
 
   scene.overrideMaterial = null
-  editorOnly.forEach((o) => { o.visible = true })
   scene.fog = restore.fog
   scene.background = restore.bg
   grid.visible = restore.grid
   camHelper.visible = restore.helper
   camBody.visible = restore.body
+  cube.material.emissive.setHex(restore.emissive)
   r2.dispose()
   return frames
 }
@@ -522,13 +470,180 @@ function renderDepthFrames(take, n = 81) {
   return renderDepthFramesFrom((u, cam) => samplePose(take, u * take.dur, cam), n)
 }
 
-const DEFAULT_PROMPT = 'Two figures in long dark coats stand facing each other in an empty concrete '
-  + 'warehouse at night, a wooden crate between them, hard rim lighting through haze, '
-  + 'volumetric light shafts, cinematic 35mm film, moody teal and amber color grade'
-let shotSpec = { prompt: '' }
+// ---------------------------------------------------------------- main prompt bar
+const promptInput = document.getElementById('promptInput')
+const promptMic = document.getElementById('promptMic')
+const promptSend = document.getElementById('promptSend')
+const attachRow = document.getElementById('attachRow')
+const refFile = document.getElementById('refFile')
+const PROMPT_PLACEHOLDER = 'Describe the look & atmosphere of the shot…'
+const DEFAULT_PROMPT = 'A single object on the floor of an empty concrete warehouse at night, '
+  + 'hard rim lighting through haze, volumetric light shafts, cinematic 35mm film, '
+  + 'moody teal and amber color grade'
+const refs = [] // reference images as data URLs
 
-const genBtn = document.getElementById('genBtn')
-const genLabel = document.getElementById('genLabel')
+function chipEl(iconName, text, onRemove, onClick) {
+  const c = document.createElement('div')
+  c.className = 'attach'
+  c.innerHTML = `${icon(iconName)}<span class="txt"></span>`
+  c.querySelector('.txt').textContent = text
+  if (onClick) {
+    c.style.cursor = 'pointer'
+    c.onclick = onClick
+  }
+  const x = document.createElement('button')
+  x.innerHTML = icon('x')
+  x.title = 'Remove'
+  x.onclick = (e) => { e.stopPropagation(); onRemove() }
+  c.append(x)
+  return c
+}
+
+// the prompt is assembled from attachments, like images in a chat composer:
+// [object] + [motion take] + [reference images] + the typed look
+function renderAttachments() {
+  attachRow.innerHTML = ''
+  if (objectPrompt) {
+    attachRow.append(chipEl('box', objectPrompt,
+      () => { objectPrompt = ''; localStorage.setItem('blocking-object-v1', ''); renderAttachments() },
+      () => setCubeBox(true)))
+  }
+  const take = takes.find((t) => t.id === chosenId)
+  if (take) {
+    const label = cameraLanguage?.move_name || `${take.name} · ${take.dur.toFixed(1)}s`
+    attachRow.append(chipEl('video', label,
+      () => { chosenId = null; renderTakes() }))
+  }
+  for (let i = 0; i < refs.length; i++) {
+    const c = document.createElement('div')
+    c.className = 'attach'
+    const img = document.createElement('img')
+    img.src = refs[i]
+    const x = document.createElement('button')
+    x.innerHTML = icon('x')
+    x.title = 'Remove'
+    x.onclick = () => { refs.splice(i, 1); renderAttachments() }
+    c.append(img, x)
+    attachRow.append(c)
+  }
+  attachRow.classList.toggle('has', attachRow.children.length > 0)
+}
+
+document.getElementById('refBtn').onclick = () => refFile.click()
+refFile.onchange = () => {
+  for (const f of refFile.files) {
+    const fr = new FileReader()
+    fr.onload = () => { refs.push(fr.result); renderAttachments() }
+    fr.readAsDataURL(f)
+  }
+  refFile.value = ''
+}
+
+function setPromptBusy(on, label = 'Working…') {
+  promptInput.disabled = on
+  promptInput.placeholder = on ? label : PROMPT_PLACEHOLDER
+  promptSend.disabled = on
+}
+
+function doSend() {
+  if (generating) return toast('Already generating…')
+  if (!takes.find((t) => t.id === chosenId)) {
+    return toast('Record a camera take first — the motion is part of the prompt')
+  }
+  generate()
+}
+promptSend.onclick = doSend
+promptInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') doSend()
+  if (e.key === 'Escape') promptInput.blur()
+})
+
+// ---------------------------------------------------------------- dictation (both mics)
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition
+let dictation = null // { micEl, target, speech? }
+let mediaRec = null
+
+function setDictUI(on) {
+  if (!dictation) return
+  dictation.micEl.classList.toggle('listening', on)
+  dictation.micEl.innerHTML = icon(on ? 'square' : 'mic')
+}
+function stopDictation() {
+  if (dictation?.speech) { try { dictation.speech.stop() } catch { /* already stopped */ } }
+  if (mediaRec?.state === 'recording') mediaRec.stop()
+}
+function toggleDictation(micEl, target) {
+  if (dictation) { stopDictation(); return }
+  if (SR) startSpeechRec(micEl, target)
+  else recorderFallback(micEl, target)
+}
+function startSpeechRec(micEl, target) {
+  const speech = new SR()
+  dictation = { micEl, target, speech }
+  speech.continuous = true
+  speech.interimResults = true
+  speech.lang = 'en-US'
+  const base = target.value ? target.value.replace(/\s*$/, ' ') : ''
+  let finalText = ''
+  speech.onresult = (e) => {
+    let interim = ''
+    for (const r of e.results) (r.isFinal ? (finalText += r[0].transcript + ' ') : (interim += r[0].transcript))
+    target.value = (base + finalText + interim).trimStart() // live transcript
+  }
+  speech.onend = () => { setDictUI(false); dictation = null }
+  speech.onerror = (e2) => {
+    speech.onend = null
+    setDictUI(false)
+    dictation = null
+    if (e2.error === 'not-allowed') toast('Mic permission denied')
+    else recorderFallback(micEl, target) // e.g. network-blocked speech service
+  }
+  speech.start()
+  setDictUI(true)
+}
+async function recorderFallback(micEl, target) {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    mediaRec = new MediaRecorder(stream, { mimeType: 'audio/webm' })
+    dictation = { micEl, target }
+    const chunks = []
+    mediaRec.ondataavailable = (e) => chunks.push(e.data)
+    mediaRec.onstop = async () => {
+      stream.getTracks().forEach((t) => t.stop())
+      setDictUI(false)
+      dictation = null
+      const fr = new FileReader()
+      fr.onload = async () => {
+        const r = await fetch('/api/transcribe', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ audio: fr.result }),
+        })
+        const out = await r.json()
+        if (r.ok && out.text) target.value = (target.value ? target.value + ' ' : '') + out.text
+        else toast('Heard nothing — try again')
+      }
+      fr.readAsDataURL(new Blob(chunks, { type: 'audio/webm' }))
+    }
+    mediaRec.start()
+    setDictUI(true)
+    setTimeout(() => mediaRec?.state === 'recording' && mediaRec.stop(), 15_000)
+  } catch {
+    toast('No microphone available')
+  }
+}
+promptMic.onclick = () => toggleDictation(promptMic, promptInput)
+const cubeMic = document.getElementById('cubeMic')
+cubeMic.onclick = () => toggleDictation(cubeMic, cubePrompt)
+
+// ---------------------------------------------------------------- generate
+function composePrompt() {
+  const parts = []
+  if (objectPrompt.trim()) parts.push(`Main object: ${objectPrompt.trim()}`)
+  parts.push(promptInput.value.trim() || DEFAULT_PROMPT)
+  return parts.join('. ')
+}
+
 let generating = false
 let genMode = 'exact'
 for (const [id, m] of [['modeExact', 'exact'], ['modeBeautiful', 'beautiful']]) {
@@ -543,19 +658,19 @@ async function generate(promptOverride) {
   if (generating) return toast('Already generating…')
   const take = takes.find((t) => t.id === chosenId)
   if (!take) return toast('Record and choose a take first')
-  let prompt = promptOverride || shotSpec.prompt || DEFAULT_PROMPT
-  if (genMode === 'beautiful' && shotSpec.camera) prompt += ` Camera: ${shotSpec.camera}`
+  let prompt = promptOverride || composePrompt()
+  if (genMode === 'beautiful' && cameraLanguage?.camera_prompt) prompt += ` Camera: ${cameraLanguage.camera_prompt}`
   generating = true
-  genLabel.textContent = 'Rendering previz…'
+  setPromptBusy(true, 'Rendering previz…')
   try {
     await new Promise((r) => setTimeout(r, 30)) // let the label paint
     const frames = renderDepthFrames(take)
-    genLabel.textContent = 'Generating… (~1–3 min)'
+    setPromptBusy(true, 'Generating… (~1–3 min)')
     toast('Depth previz uploaded — fal is dreaming')
     const resp = await fetch('/api/generate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ frames, prompt, fps: 16, mode: genMode }),
+      body: JSON.stringify({ frames, prompt, fps: 16, mode: genMode, refs }),
     })
     const out = await resp.json()
     if (!resp.ok) throw new Error(out.error || resp.statusText)
@@ -566,10 +681,9 @@ async function generate(promptOverride) {
     toast(`Generation failed: ${err.message}`)
   } finally {
     generating = false
-    genLabel.textContent = 'Generate'
+    setPromptBusy(false)
   }
 }
-genBtn.onclick = () => generate()
 
 let syncTimer = 0
 function showResult(out, prompt) {
@@ -623,15 +737,6 @@ function coverageRig() {
   const wideDir = c.clone().sub(wideFrom).setY(0).normalize()
   angles.push({ key: 'wide', hint: 'wide establishing shot', poseAt: push(wideFrom, wideDir, 0.4, c) })
 
-  if (actors.length >= 2) {
-    const a = actors[0].position
-    const b = actors[1].position
-    const back = a.clone().sub(b).setY(0).normalize()
-    const otsFrom = a.clone().addScaledVector(back, 0.65).addScaledVector(perp, 0.6).setY(1.72)
-    const look = b.clone().setY(1.42)
-    const otsDir = look.clone().sub(otsFrom).setY(0).normalize()
-    angles.push({ key: 'ots', hint: 'over-the-shoulder shot, shallow depth of field', poseAt: push(otsFrom, otsDir, 0.18, look) })
-  }
   if (props.length) {
     const t = props[0].position.clone().setY(0.5)
     const insFrom = t.clone().addScaledVector(perp, 2.4).addScaledVector(axis, 0.5).setY(1.15)
@@ -657,7 +762,7 @@ async function coverage() {
   if (generating) return toast('Already generating…')
   const rig = coverageRig()
   if (!rig.length) return toast('Nothing on stage to cover')
-  const basePrompt = shotSpec.prompt || DEFAULT_PROMPT
+  const basePrompt = composePrompt()
   generating = true
   const covLabel = document.getElementById('covLabel')
   covLabel.textContent = 'Rendering rig…'
@@ -695,205 +800,10 @@ async function coverage() {
     covLabel.textContent = 'Coverage'
   }
 }
-
-// ---------------------------------------------------------------- shot direction (typed or spoken)
-const promptInput = document.getElementById('promptInput')
-const promptMic = document.getElementById('promptMic')
-const promptSend = document.getElementById('promptSend')
-const PROMPT_PLACEHOLDER = 'Describe the shot — or tap the mic'
-const specChips = document.getElementById('specChips')
-let listening = false
-let mediaRec = null
-
-function setPromptBusy(on, label = 'Parsing direction…') {
-  promptInput.disabled = on
-  promptInput.placeholder = on ? label : PROMPT_PLACEHOLDER
-  promptSend.disabled = on || !promptInput.value.trim()
-}
-
-function submitPrompt() {
-  const text = promptInput.value.trim()
-  if (!text || listening) return
-  promptInput.value = ''
-  onTranscript(text)
-}
-promptSend.onclick = submitPrompt
-promptInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') submitPrompt()
-  if (e.key === 'Escape') promptInput.blur()
-})
-promptInput.addEventListener('input', () => { promptSend.disabled = !promptInput.value.trim() })
-
-function sceneSummary() {
-  const by = (k) => stage.children.filter((g) => g.userData.kind === k)
-  const actors = by('actor')
-  let s = `${actors.length} actor(s)`
-  if (actors.length === 2) {
-    s += `, ${actors[0].position.distanceTo(actors[1].position).toFixed(1)}m apart`
-  }
-  s += `, ${by('prop').length} prop(s), ${by('wall').length} wall(s).`
-  s += ' Camera starts ~4m back at eye height, moving as the depth video shows.'
-  return s
-}
-
-async function onTranscript(text, spoken = false) {
-  if (!text || !text.trim()) { setPromptBusy(false); toast('Heard nothing — try again'); return }
-  setPromptBusy(true)
-  if (spoken) toast(`You said: “${text.trim().slice(0, 80)}”`)
-  try {
-    const r = await fetch('/api/direct', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ transcript: text, scene: sceneSummary() }),
-    })
-    const out = await r.json()
-    if (!r.ok) throw new Error(out.error || r.statusText)
-    applySpec(out.spec)
-  } catch (err) {
-    toast(`Direction failed: ${err.message}`)
-  } finally {
-    setPromptBusy(false)
-  }
-}
-
-function applySpec(spec) {
-  shotSpec = { ...spec, prompt: spec.video_prompt || '' }
-  specChips.innerHTML = ''
-  for (const k of ['setting', 'subjects', 'action', 'lighting', 'mood', 'style']) {
-    if (!spec[k]) continue
-    const c = document.createElement('span')
-    c.className = 'chip'
-    c.title = k
-    c.textContent = spec[k]
-    specChips.append(c)
-  }
-  toast('Shot spec ready — choose a take and Generate')
-}
-
-const SR = window.SpeechRecognition || window.webkitSpeechRecognition
-promptMic.onclick = () => {
-  if (listening) { stopVoice(); return }
-  if (SR) startSpeechRec()
-  else startRecorderFallback()
-}
-
-let speech = null
-function startSpeechRec() {
-  speech = new SR()
-  speech.continuous = true
-  speech.interimResults = true
-  speech.lang = 'en-US'
-  let finalText = ''
-  speech.onresult = (e) => {
-    let interim = ''
-    for (const r of e.results) (r.isFinal ? (finalText += r[0].transcript + ' ') : (interim += r[0].transcript))
-    promptInput.value = (finalText + interim).trimStart() // live transcript in the bar
-  }
-  speech.onend = () => { setListening(false); promptInput.value = ''; onTranscript(finalText, true) }
-  speech.onerror = (e) => {
-    speech.onend = null
-    setListening(false)
-    if (e.error === 'not-allowed') toast('Mic permission denied')
-    else startRecorderFallback() // e.g. network-blocked speech service
-  }
-  speech.start()
-  setListening(true)
-}
-
-async function startRecorderFallback() {
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-    mediaRec = new MediaRecorder(stream, { mimeType: 'audio/webm' })
-    const chunks = []
-    mediaRec.ondataavailable = (e) => chunks.push(e.data)
-    mediaRec.onstop = async () => {
-      stream.getTracks().forEach((t) => t.stop())
-      setListening(false)
-      setPromptBusy(true, 'Transcribing…')
-      const fr = new FileReader()
-      fr.onload = async () => {
-        const r = await fetch('/api/transcribe', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ audio: fr.result }),
-        })
-        const out = await r.json()
-        onTranscript(r.ok ? out.text : '', true)
-      }
-      fr.readAsDataURL(new Blob(chunks, { type: 'audio/webm' }))
-    }
-    mediaRec.start()
-    setListening(true)
-    setTimeout(() => mediaRec?.state === 'recording' && mediaRec.stop(), 15_000)
-  } catch {
-    toast('No microphone available')
-  }
-}
-
-function stopVoice() {
-  if (speech) { try { speech.stop() } catch { /* already stopped */ } speech = null }
-  if (mediaRec?.state === 'recording') mediaRec.stop()
-}
-
-function setListening(on) {
-  listening = on
-  promptMic.classList.toggle('listening', on)
-  promptMic.innerHTML = icon(on ? 'square' : 'mic')
-  promptMic.title = on ? 'Stop listening' : 'Speak the shot'
-  promptInput.placeholder = on ? 'Listening — tap to stop' : PROMPT_PLACEHOLDER
-}
-
-// the performed move, translated to cinematographer language (for prompt-
-// driven models and as a readable label for the director)
-let cameraLanguage = null
-async function updateCameraLanguage() {
-  const take = takes.find((t) => t.id === chosenId)
-  const chip = document.getElementById('camChip')
-  if (!take) { chip.style.display = 'none'; return }
-  chip.style.display = 'inline-block'
-  chip.textContent = 'reading the move…'
-  try {
-    const r = await fetch('/api/camera-language', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ frames: take.frames }),
-    })
-    const out = await r.json()
-    if (!r.ok) throw new Error(out.error || r.statusText)
-    cameraLanguage = out
-    chip.textContent = out.move_name
-    chip.title = out.camera_prompt
-    shotSpec.camera = out.camera_prompt
-  } catch (err) {
-    chip.textContent = '(unreadable move)'
-    console.error(err)
-  }
-}
-
-// scripting/debug hook
-window.__blocking = {
-  generate, renderDepthFrames, takes: () => takes,
-  setSpec: (s) => { shotSpec = s }, onTranscript, sceneSummary, showResult,
-  cameraLanguage: () => cameraLanguage, updateCameraLanguage, coverage, coverageRig,
-  renderDepthFramesFrom,
-  selected: () => selected?.userData ?? null,
-  stageInfo: () => stage.children.map((g) => ({ ...g.userData, x: +g.position.x.toFixed(2), z: +g.position.z.toFixed(2) })),
-  screenPosOf: (i) => {
-    const g = stage.children[i]
-    if (!g) return null
-    const v = g.position.clone().add(new THREE.Vector3(0, 0.5, 0)).project(swapped ? filmCam : editorCam)
-    return [Math.round((v.x + 1) / 2 * renderer.domElement.clientWidth), Math.round((1 - v.y) / 2 * renderer.domElement.clientHeight)]
-  },
-}
 document.getElementById('covBtn').onclick = () => coverage()
 
 // ---------------------------------------------------------------- UI chrome
 function send(obj) { if (ws.open) ws.sock.send(JSON.stringify(obj)) }
-
-document.getElementById('addActor').onclick = () => addObject('actor', rnd(2), rnd(2))
-document.getElementById('addProp').onclick = () => addObject('prop', rnd(3), rnd(3))
-document.getElementById('addWall').onclick = () => addObject('wall', rnd(4), -3)
-const rnd = (r) => (Math.random() - 0.5) * r
 
 const pairModal = document.getElementById('pairModal')
 window.pairModal = pairModal
@@ -937,6 +847,24 @@ function toast(msg) {
   toastTimer = setTimeout(() => el.classList.remove('show'), 2600)
 }
 
+// scripting/debug hook
+window.__blocking = {
+  generate, coverage, coverageRig, renderDepthFrames, renderDepthFramesFrom,
+  takes: () => takes, cameraLanguage: () => cameraLanguage, updateCameraLanguage,
+  showResult, refs,
+  objectPrompt: () => objectPrompt,
+  setObject: (s) => { objectPrompt = s; localStorage.setItem('blocking-object-v1', s); renderAttachments() },
+  cubeBoxOpen: () => cubeBox.classList.contains('open'),
+  cubeScreenPos: () => {
+    const v = cube.getWorldPosition(new THREE.Vector3()).setY(0.5).project(swapped ? filmCam : editorCam)
+    return [Math.round((v.x + 1) / 2 * renderer.domElement.clientWidth),
+      Math.round((1 - v.y) / 2 * renderer.domElement.clientHeight)]
+  },
+  composePrompt,
+}
+
+renderAttachments()
+
 // ---------------------------------------------------------------- render loop
 let last = performance.now()
 renderer.setAnimationLoop(() => {
@@ -955,6 +883,8 @@ renderer.setAnimationLoop(() => {
   camBody.quaternion.copy(filmCam.quaternion)
   filmCam.updateMatrixWorld()
   camHelper.update()
+
+  if (cubeBox.classList.contains('open')) positionCubeBox()
 
   if (recording && recFrames) {
     recFrames.push({ t: now - recStart, p: filmCam.position.toArray(), q: filmCam.quaternion.toArray() })

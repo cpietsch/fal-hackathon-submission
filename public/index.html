@@ -85,33 +85,63 @@
   .take button { padding: 2px 7px; border-radius: 5px; font-size: 12px; }
 
   #shotPanel { right: 14px; width: 218px; }
-  #specChips { display: flex; flex-wrap: wrap; gap: 5px; min-height: 24px; margin: 8px 0; }
-  #specChips .chip { background: var(--panel2); border: 1px solid var(--line); border-radius: 999px; padding: 2px 9px; font-size: 11px; }
-  #genBtn { width: 100%; margin-top: 4px; background: var(--accent); color: #191307; font-weight: 600; }
-  #genBtn:hover { background: #f2b455; }
-  #genBtn:disabled { background: rgba(255,255,255,.06); color: var(--dim); }
-  #modeRow { display: flex; gap: 4px; margin-bottom: 6px; background: rgba(255,255,255,.04); border-radius: 8px; padding: 3px; }
+  #modeRow { display: flex; gap: 4px; margin: 6px 0; background: rgba(255,255,255,.04); border-radius: 8px; padding: 3px; }
   #modeRow button { flex: 1; background: none; border-radius: 6px; padding: 5px 0; color: var(--dim); justify-content: center; }
-  #genBtn, #covBtn, #recBtn { justify-content: center; }
+  #covBtn, #recBtn { justify-content: center; }
   #modeRow button.active { background: rgba(232,163,61,.16); color: var(--accent); }
 
   #promptBar {
     position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%);
-    z-index: 6; width: min(560px, 56vw);
-    display: flex; align-items: center; gap: 4px;
+    z-index: 6; width: min(620px, 60vw);
+    display: flex; flex-direction: column; gap: 6px;
     background: rgba(25,28,34,.96);
-    border: 1px solid var(--line); border-radius: 999px;
-    padding: 6px 6px 6px 16px; box-shadow: 0 10px 30px rgba(0,0,0,.4);
+    border: 1px solid var(--line); border-radius: 18px;
+    padding: 8px; box-shadow: 0 10px 30px rgba(0,0,0,.4);
   }
   #promptBar:focus-within { border-color: #3d434f; }
+  #promptRow { display: flex; align-items: center; gap: 4px; padding-left: 8px; }
   #promptInput { flex: 1; min-width: 0; background: none; border: none; outline: none; color: var(--text); font: inherit; }
   #promptInput::placeholder { color: var(--dim); }
-  #promptMic, #promptSend {
+  #refBtn, #promptMic, #promptSend {
     width: 34px; height: 34px; border-radius: 50%; padding: 0; flex: none;
-    display: grid; place-items: center; font-size: 15px;
+    display: grid; place-items: center;
   }
-  #promptMic.listening { background: rgba(229,72,77,.18); color: var(--rec); animation: micpulse 1.2s infinite; }
+  #promptSend { background: var(--accent); color: #191307; }
+  #promptSend:hover { background: #f2b455; }
+  #promptSend:disabled { background: rgba(255,255,255,.06); color: var(--dim); }
+  .listening { background: rgba(229,72,77,.18) !important; color: var(--rec) !important; animation: micpulse 1.2s infinite; }
   @keyframes micpulse { 50% { box-shadow: 0 0 12px rgba(229,72,77,.55); } }
+
+  #attachRow { display: none; flex-wrap: wrap; gap: 6px; padding: 0 4px; }
+  #attachRow.has { display: flex; }
+  .attach {
+    display: flex; align-items: center; gap: 6px; max-width: 230px;
+    background: rgba(255,255,255,.06); border: 1px solid var(--line);
+    border-radius: 8px; padding: 4px 6px 4px 8px; font-size: 11px;
+  }
+  .attach .icon { width: 13px; height: 13px; color: var(--accent); }
+  .attach .txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .attach img { width: 30px; height: 30px; object-fit: cover; border-radius: 5px; }
+  .attach button { padding: 2px; border-radius: 4px; background: none; display: grid; place-items: center; }
+  .attach button .icon { width: 11px; height: 11px; color: var(--dim); }
+
+  #cubeBox {
+    position: absolute; z-index: 7; width: 250px; display: none;
+    flex-direction: column; gap: 8px;
+    background: rgba(25,28,34,.96); border: 1px solid var(--line);
+    border-radius: 12px; padding: 12px; box-shadow: 0 10px 30px rgba(0,0,0,.4);
+  }
+  #cubeBox.open { display: flex; }
+  #cubeBox h3 { font-size: 10px; letter-spacing: .12em; color: var(--dim); }
+  #cubeBox textarea {
+    background: rgba(255,255,255,.05); border: none; border-radius: 8px;
+    color: var(--text); font: inherit; padding: 8px; resize: none; height: 64px; outline: none;
+  }
+  #cubeBox textarea::placeholder { color: var(--dim); }
+  #cubeRow { display: flex; gap: 6px; justify-content: flex-end; }
+  #cubeMic, #cubeOk { width: 32px; height: 32px; border-radius: 50%; padding: 0; display: grid; place-items: center; }
+  #cubeOk { background: var(--accent); color: #191307; }
+  #cubeOk:hover { background: #f2b455; }
 
   #pairModal {
     position: absolute; inset: 0; z-index: 20; display: none; place-items: center;
@@ -164,14 +194,12 @@
 <body>
   <svg style="display:none" xmlns="http://www.w3.org/2000/svg">
     <defs>
-      <symbol id="i-actor" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="1"/><path d="m9 20 3-6 3 6"/><path d="m6 8 6 2 6-2"/><path d="M12 10v4"/></symbol>
       <symbol id="i-box" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></symbol>
-      <symbol id="i-wall" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M12 9v6"/><path d="M16 15v6"/><path d="M16 3v6"/><path d="M3 15h18"/><path d="M3 9h18"/><path d="M8 15v6"/><path d="M8 3v6"/></symbol>
+      <symbol id="i-image" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></symbol>
       <symbol id="i-video" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5"/><rect x="2" y="6" width="14" height="12" rx="2"/></symbol>
       <symbol id="i-gamepad" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="6" x2="10" y1="11" y2="11"/><line x1="8" x2="8" y1="9" y2="13"/><line x1="15" x2="15.01" y1="12" y2="12"/><line x1="18" x2="18.01" y1="10" y2="10"/><path d="M17.32 5H6.68a4 4 0 0 0-3.978 3.59c-.006.052-.01.101-.017.152C2.604 9.416 2 14.456 2 16a3 3 0 0 0 3 3c1 0 1.5-.5 2-1l1.414-1.414A2 2 0 0 1 9.828 16h4.344a2 2 0 0 1 1.414.586L17 18c.5.5 1 1 2 1a3 3 0 0 0 3-3c0-1.545-.604-6.584-.685-7.258-.007-.05-.011-.1-.017-.151A4 4 0 0 0 17.32 5z"/></symbol>
       <symbol id="i-phone" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="20" x="5" y="2" rx="2" ry="2"/><path d="M12 18h.01"/></symbol>
       <symbol id="i-crosshair" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="22" x2="18" y1="12" y2="12"/><line x1="6" x2="2" y1="12" y2="12"/><line x1="12" x2="12" y1="6" y2="2"/><line x1="12" x2="12" y1="22" y2="18"/></symbol>
-      <symbol id="i-sparkles" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.287 1.288L3 12l5.8 1.9a2 2 0 0 1 1.288 1.287L12 21l1.9-5.8a2 2 0 0 1 1.287-1.288L21 12l-5.8-1.9a2 2 0 0 1-1.288-1.287Z"/><path d="M5 3v4"/><path d="M19 17v4"/><path d="M3 5h4"/><path d="M17 19h4"/></symbol>
       <symbol id="i-film" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M7 3v18"/><path d="M3 7.5h4"/><path d="M3 12h18"/><path d="M3 16.5h4"/><path d="M17 3v18"/><path d="M21 7.5h-4"/><path d="M21 12h-4"/><path d="M21 16.5h-4"/></symbol>
       <symbol id="i-mic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></symbol>
       <symbol id="i-square" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/></symbol>
@@ -197,18 +225,13 @@
   </div>
 
   <div class="island" id="tools">
-    <h3>STAGE</h3>
-    <button id="addActor"><svg class="icon"><use href="#i-actor"/></svg>Actor</button>
-    <button id="addProp"><svg class="icon"><use href="#i-box"/></svg>Prop</button>
-    <button id="addWall"><svg class="icon"><use href="#i-wall"/></svg>Wall</button>
-    <div class="divider"></div>
     <h3>CAMERA</h3>
     <button id="camViewBtn" title="See through the film camera and fly it with the keys"><svg class="icon"><use href="#i-video"/></svg>Camera view</button>
     <button id="simBtn" title="Fly the camera with WASD/QZ + arrow keys"><svg class="icon"><use href="#i-gamepad"/></svg>Fly controls</button>
     <button id="pairBtn"><svg class="icon"><use href="#i-phone"/></svg>Pair phone</button>
     <button id="rezeroBtn" title="Re-anchor the phone camera to its start mark"><svg class="icon"><use href="#i-crosshair"/></svg>Re-zero</button>
     <div id="scaleRow"><span>move ×</span><input id="scale" type="range" min="0.25" max="4" step="0.25" value="1" /><b id="scaleVal">1</b></div>
-    <div class="hint">drag&nbsp;move · Q/E&nbsp;rotate<br/>Del&nbsp;delete · click PiP&nbsp;swap</div>
+    <div class="hint">click the cube to define<br/>the main object</div>
   </div>
 
   <div class="island" id="shotPanel">
@@ -216,14 +239,11 @@
     <button id="recBtn" title="Record the camera move as a take (phone or fly controls), up to 30s">
       <svg class="icon"><use href="#i-disc"/></svg><span id="recLabel">Start recording</span>
     </button>
-    <div id="specChips"></div>
-    <div id="camChip" style="display:none; border:1px solid var(--accent); color:var(--accent); border-radius:999px; padding:3px 10px; font-size:11px; margin-bottom:6px;"></div>
     <div id="modeRow">
       <button id="modeExact" class="active" title="Depth-constrained (Wan VACE): follows your camera frame-for-frame">Exact</button>
       <button id="modeBeautiful" title="Camera language on Seedance 2.0: follows the intent of your move, frontier fidelity">Beautiful</button>
     </div>
-    <button id="genBtn" disabled title="Needs a chosen take + FAL_KEY"><svg class="icon"><use href="#i-sparkles"/></svg><span id="genLabel">Generate</span></button>
-    <button id="covBtn" style="width:100%; margin-top:6px;" title="Generate wide / OTS / insert / arc from this blocking, plus an automatic multicam cut"><svg class="icon"><use href="#i-film"/></svg><span id="covLabel">Coverage</span></button>
+    <button id="covBtn" style="width:100%; margin-top:6px;" title="Generate wide / insert / arc from this blocking, plus an automatic multicam cut"><svg class="icon"><use href="#i-film"/></svg><span id="covLabel">Coverage</span></button>
   </div>
 
   <div class="bar" id="bottombar">
@@ -233,9 +253,23 @@
   <div id="pipFrame"><span id="pipLabel">FILM CAM — CLICK TO ENTER</span></div>
 
   <div id="promptBar">
-    <input id="promptInput" type="text" placeholder="Describe the shot — or tap the mic" autocomplete="off" spellcheck="false" />
-    <button id="promptMic" title="Speak the shot"><svg class="icon"><use href="#i-mic"/></svg></button>
-    <button id="promptSend" title="Apply direction" disabled><svg class="icon"><use href="#i-send"/></svg></button>
+    <div id="attachRow"></div>
+    <div id="promptRow">
+      <input id="promptInput" type="text" placeholder="Describe the look &amp; atmosphere of the shot…" autocomplete="off" spellcheck="false" />
+      <button id="refBtn" title="Add reference images for the shot atmosphere"><svg class="icon"><use href="#i-image"/></svg></button>
+      <button id="promptMic" title="Dictate"><svg class="icon"><use href="#i-mic"/></svg></button>
+      <button id="promptSend" title="Generate the shot"><svg class="icon"><use href="#i-send"/></svg></button>
+    </div>
+    <input id="refFile" type="file" accept="image/*" multiple hidden />
+  </div>
+
+  <div id="cubeBox">
+    <h3>MAIN OBJECT</h3>
+    <textarea id="cubePrompt" placeholder="What is this object? Speak or type…"></textarea>
+    <div id="cubeRow">
+      <button id="cubeMic" title="Dictate"><svg class="icon"><use href="#i-mic"/></svg></button>
+      <button id="cubeOk" title="Attach to the main prompt"><svg class="icon"><use href="#i-check"/></svg></button>
+    </div>
   </div>
 
   <div id="pairModal">

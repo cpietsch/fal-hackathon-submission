@@ -316,12 +316,21 @@ app.post('/api/generate', async (req, res) => {
     const file = new File([fs.readFileSync(controlPath)], 'control.mp4', { type: 'video/mp4' })
     const controlUrl = await fal.storage.upload(file)
 
+    // reference images (data URLs) — kept with the session; in beautiful mode
+    // the first one anchors the shot via image-to-video
+    const refs = Array.isArray(req.body.refs) ? req.body.refs.slice(0, 4) : []
+    refs.forEach((r, i) => {
+      const m = /^data:image\/(\w+);base64,/.exec(r)
+      if (m) fs.writeFileSync(path.join(dir, `ref_${i}.${m[1] === 'jpeg' ? 'jpg' : m[1]}`),
+        Buffer.from(r.slice(r.indexOf(',') + 1), 'base64'))
+    })
+
     // exact: depth-constrained VACE. beautiful: camera language in the prompt
     // on a frontier model — follows intent, not geometry.
-    const model = mode === 'beautiful'
+    let model = mode === 'beautiful'
       ? 'bytedance/seedance-2.0/fast/text-to-video'
       : DEPTH_MODELS[modelKey] || DEPTH_MODELS['wan22-fun']
-    const input = mode === 'beautiful'
+    let input = mode === 'beautiful'
       ? { prompt, resolution: '720p', duration: '5', aspect_ratio: '16:9', generate_audio: false }
       : {
           prompt,
@@ -332,6 +341,14 @@ app.post('/api/generate', async (req, res) => {
           resolution,
           aspect_ratio: '16:9',
         }
+    if (mode === 'beautiful' && refs.length) {
+      const raw = refs[0]
+      const type = (/^data:(image\/\w+);/.exec(raw) || [])[1] || 'image/jpeg'
+      const refFile = new File([Buffer.from(raw.slice(raw.indexOf(',') + 1), 'base64')], 'ref', { type })
+      const refUrl = await fal.storage.upload(refFile)
+      model = 'bytedance/seedance-2.0/fast/image-to-video'
+      input = { prompt, image_url: refUrl, resolution: '720p', duration: '5', generate_audio: false }
+    }
     falLog({ event: 'request', id, model, input: { ...input, video_url: controlUrl } })
     console.log(`[gen ${id}] ${frames.length} frames -> ${model}`)
 
