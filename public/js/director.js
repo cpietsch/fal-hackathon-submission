@@ -143,7 +143,6 @@ cubePrompt.addEventListener('keydown', (e) => {
 const keys = new Set()
 let downAt = null
 renderer.domElement.addEventListener('pointerdown', (e) => {
-  if (inPip(e)) { setSwapped(!swapped); return }
   downAt = [e.clientX, e.clientY]
 })
 renderer.domElement.addEventListener('pointerup', (e) => {
@@ -156,10 +155,10 @@ renderer.domElement.addEventListener('pointerup', (e) => {
   setCubeBox(hits.length > 0)
 })
 renderer.domElement.addEventListener('pointermove', (e) => {
-  if (swapped || simMode) { renderer.domElement.style.cursor = inPip(e) ? 'pointer' : ''; return }
-  const overCube = !inPip(e) && pointerRay(e).intersectObjects(stage.children, true).length > 0
+  if (swapped || simMode) { renderer.domElement.style.cursor = ''; return }
+  const overCube = pointerRay(e).intersectObjects(stage.children, true).length > 0
   if (overCube !== hoveringCube) { hoveringCube = overCube; applyCubeGlow() }
-  renderer.domElement.style.cursor = inPip(e) || overCube ? 'pointer' : ''
+  renderer.domElement.style.cursor = overCube ? 'pointer' : ''
 })
 addEventListener('keydown', (e) => {
   if (/INPUT|TEXTAREA/.test(e.target.tagName)) return
@@ -168,35 +167,8 @@ addEventListener('keydown', (e) => {
 })
 addEventListener('keyup', (e) => keys.delete(e.code))
 
-// ---------------------------------------------------------------- PiP views
-let swapped = false // false: editor main + film PiP · true: film main + editor PiP
-function pipRect() {
-  const w = renderer.domElement.clientWidth
-  const h = renderer.domElement.clientHeight
-  const pw = Math.round(Math.min(360, w * 0.28))
-  const ph = Math.round(pw * 9 / 16)
-  return { x: w - pw - 14, y: h - ph - 76, w: pw, h: ph } // CSS px, from top-left
-}
-function inPip(e) {
-  const r = renderer.domElement.getBoundingClientRect()
-  const p = pipRect()
-  const x = e.clientX - r.left
-  const y = e.clientY - r.top
-  return x >= p.x && x <= p.x + p.w && y >= p.y && y <= p.y + p.h
-}
-
-// visible frame + label over the PiP click zone, so the view toggle is
-// discoverable instead of an invisible trap
-const pipFrame = document.getElementById('pipFrame')
-const pipLabel = document.getElementById('pipLabel')
-function updatePipFrame() {
-  const p = pipRect()
-  pipFrame.style.left = `${p.x}px`
-  pipFrame.style.top = `${p.y}px`
-  pipFrame.style.width = `${p.w}px`
-  pipFrame.style.height = `${p.h}px`
-  pipLabel.textContent = swapped ? 'EDITOR — CLICK TO RETURN' : 'FILM CAM — CLICK TO ENTER'
-}
+// ---------------------------------------------------------------- view swap
+let swapped = false // false: editor view · true: through the film camera
 
 function resize() {
   const w = view.clientWidth
@@ -204,7 +176,6 @@ function resize() {
   renderer.setSize(w, h)
   editorCam.aspect = w / h
   editorCam.updateProjectionMatrix()
-  updatePipFrame()
 }
 addEventListener('resize', resize)
 resize()
@@ -234,7 +205,7 @@ function connectWS() {
         : 'Rendering on fal…')
     }
     else if (m.type === 'pose') onPose(m)
-    else if (m.type === 'record') setRecording(m.on)
+    else if (m.type === 'record') startRecordFlow(m.on)
     else if (m.type === 'rezero') calib.pending = true
   }
 }
@@ -292,8 +263,12 @@ function setSwapped(on) {
   swapped = on
   camViewBtn.classList.toggle('active', on)
   setSim(on)
-  updatePipFrame()
   if (on) setCubeBox(false)
+  else {
+    filmCam.aspect = 16 / 9 // restore the film frame for the helper frustum
+    filmCam.updateProjectionMatrix()
+  }
+  updateCurvePanel()
 }
 camViewBtn.onclick = () => setSwapped(!swapped)
 
@@ -335,7 +310,46 @@ let playback = null // {take, t0}
 const recBtn = document.getElementById('recBtn')
 const recLabel = document.getElementById('recLabel')
 const takesEl = document.getElementById('takes')
-recBtn.onclick = () => setRecording(!recording)
+
+// record flow: jump into the film camera (the phone is the camera token),
+// count down 3-2-1 center screen, then roll until the director stops
+const countdownEl = document.getElementById('countdown')
+let countdownTimer = 0
+function startRecordFlow(on) {
+  if (!on) {
+    cancelCountdown()
+    setRecording(false)
+    return
+  }
+  if (recording || countdownTimer) return
+  setSwapped(true)
+  recLabel.textContent = 'Get ready…'
+  let n = 3
+  const tick = () => {
+    if (n === 0) {
+      countdownEl.classList.remove('show')
+      countdownEl.innerHTML = ''
+      countdownTimer = 0
+      setRecording(true)
+      return
+    }
+    countdownEl.innerHTML = `<b>${n}</b>` // fresh node restarts the pop animation
+    countdownEl.classList.add('show')
+    n--
+    countdownTimer = setTimeout(tick, 800)
+  }
+  tick()
+}
+function cancelCountdown() {
+  if (!countdownTimer) return
+  clearTimeout(countdownTimer)
+  countdownTimer = 0
+  countdownEl.classList.remove('show')
+  countdownEl.innerHTML = ''
+  recLabel.textContent = 'Start recording'
+  setSwapped(false)
+}
+recBtn.onclick = () => startRecordFlow(!(recording || countdownTimer))
 
 function setRecording(on) {
   if (on === recording) return
@@ -347,15 +361,18 @@ function setRecording(on) {
   if (on) {
     recStart = performance.now()
     recFrames = []
-  } else if (recFrames && recFrames.length > 5) {
-    const dur = (performance.now() - recStart) / 1000
-    const take = { id: Date.now(), name: `Take ${takes.length + 1}`, dur, frames: recFrames }
-    takes.push(take)
-    if (chosenId === null) chosenId = take.id
+  } else {
+    if (recFrames && recFrames.length > 5) {
+      const dur = (performance.now() - recStart) / 1000
+      const take = { id: Date.now(), name: `Take ${takes.length + 1}`, dur, raw: recFrames, frames: recFrames, smooth: 0 }
+      takes.push(take)
+      chosenId = take.id // the fresh take is the motion — analyze it
+      renderTakes()
+      toast(`${take.name} saved — ${dur.toFixed(1)}s`)
+      updateCameraLanguage()
+    }
     recFrames = null
-    renderTakes()
-    toast(`${take.name} saved — ${dur.toFixed(1)}s`)
-    if (chosenId === take.id) updateCameraLanguage()
+    setSwapped(false) // back to the editor with the curve panel up
   }
 }
 
@@ -386,6 +403,7 @@ function renderTakes() {
     takesEl.append(el)
   }
   renderAttachments()
+  updateCurvePanel()
 }
 
 function samplePose(take, tSec, cam) {
@@ -408,6 +426,100 @@ function playbackTick() {
   if (t >= take.dur || t * 1000 >= take.frames[take.frames.length - 1].t) { playback = null; return }
   samplePose(take, t, filmCam)
 }
+
+// ---------------------------------------------------------------- movement curves
+// After-Effects-style channel view of the chosen take (position X/Y/Z over
+// time) with a smoothing dial — refine the performed move without re-doing it
+const curvePanel = document.getElementById('curvePanel')
+const curveCanvas = document.getElementById('curveCanvas')
+const smoothEl = document.getElementById('smooth')
+
+function smoothFrames(raw, s) {
+  const out = raw.map((f) => ({ t: f.t, p: [...f.p], q: [...f.q] }))
+  if (!s) return out
+  const win = Math.max(1, Math.round(s * 14)) // frames each side, ~0.25s at full strength
+  for (let i = 0; i < raw.length; i++) {
+    const a = Math.max(0, i - win)
+    const b = Math.min(raw.length - 1, i + win)
+    const p = [0, 0, 0]
+    const q = [0, 0, 0, 0]
+    for (let j = a; j <= b; j++) {
+      for (let k = 0; k < 3; k++) p[k] += raw[j].p[k]
+      // keep quaternions in the same hemisphere before averaging
+      const dot = raw[j].q[0] * raw[i].q[0] + raw[j].q[1] * raw[i].q[1]
+        + raw[j].q[2] * raw[i].q[2] + raw[j].q[3] * raw[i].q[3]
+      const sgn = dot < 0 ? -1 : 1
+      for (let k = 0; k < 4; k++) q[k] += sgn * raw[j].q[k]
+    }
+    const n = b - a + 1
+    out[i].p = p.map((v) => v / n)
+    const len = Math.hypot(q[0], q[1], q[2], q[3]) || 1
+    out[i].q = q.map((v) => v / len)
+  }
+  return out
+}
+
+const CURVE_COLORS = ['#e5484d', '#46a758', '#5b8def'] // X Y Z
+function drawCurves(take) {
+  const dpr = Math.min(devicePixelRatio, 2)
+  const W = curveCanvas.clientWidth * dpr
+  const H = curveCanvas.clientHeight * dpr
+  curveCanvas.width = W
+  curveCanvas.height = H
+  const ctx = curveCanvas.getContext('2d')
+  ctx.clearRect(0, 0, W, H)
+
+  // grid
+  ctx.strokeStyle = '#1e222a'
+  ctx.lineWidth = 1
+  for (let gy = 1; gy < 4; gy++) {
+    ctx.beginPath()
+    ctx.moveTo(0, H * gy / 4)
+    ctx.lineTo(W, H * gy / 4)
+    ctx.stroke()
+  }
+
+  const fs = take.frames
+  const t1 = fs[fs.length - 1].t || 1
+  const pad = 8 * dpr
+  for (let ch = 0; ch < 3; ch++) {
+    let min = Infinity
+    let max = -Infinity
+    for (const f of fs) { min = Math.min(min, f.p[ch]); max = Math.max(max, f.p[ch]) }
+    const span = Math.max(max - min, 0.02) // flat channels stay centered
+    const mid = (min + max) / 2
+    ctx.strokeStyle = CURVE_COLORS[ch]
+    ctx.lineWidth = 1.5 * dpr
+    ctx.beginPath()
+    for (let i = 0; i < fs.length; i++) {
+      const x = (fs[i].t / t1) * (W - 2 * pad) + pad
+      const y = H / 2 - ((fs[i].p[ch] - mid) / span) * (H - 2 * pad) * 0.9
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)
+    }
+    ctx.stroke()
+  }
+}
+
+function updateCurvePanel() {
+  const take = takes.find((t) => t.id === chosenId)
+  const show = Boolean(take) && !swapped && !recording
+  curvePanel.classList.toggle('show', show)
+  if (!show) return
+  document.getElementById('curveTitle').textContent = `MOVEMENT — ${take.name.toUpperCase()} · ${take.dur.toFixed(1)}S`
+  smoothEl.value = String(take.smooth)
+  document.getElementById('smoothVal').textContent = take.smooth.toFixed(2)
+  drawCurves(take)
+}
+
+smoothEl.oninput = () => {
+  const take = takes.find((t) => t.id === chosenId)
+  if (!take) return
+  take.smooth = Number(smoothEl.value)
+  take.frames = smoothFrames(take.raw, take.smooth)
+  document.getElementById('smoothVal').textContent = take.smooth.toFixed(2)
+  drawCurves(take)
+}
+smoothEl.onchange = () => updateCameraLanguage() // re-read the refined move
 
 // the performed move, translated to cinematographer language — shown on the
 // motion attachment and injected into the prompt in Beautiful mode
@@ -917,25 +1029,11 @@ renderer.setAnimationLoop(() => {
 
   const w = renderer.domElement.clientWidth
   const h = renderer.domElement.clientHeight
-  const pip = pipRect()
 
-  const mainCam = swapped ? filmCam : editorCam
-  const pipCam = swapped ? editorCam : filmCam
-
-  // main pass — viewport/scissor take CSS pixels; three.js applies the
-  // pixel ratio itself (passing device pixels double-scales on retina)
-  camHelper.visible = camBody.visible = mainCam === editorCam
-  if (mainCam === filmCam) { filmCam.aspect = w / h; filmCam.updateProjectionMatrix() }
+  // single pass — viewport takes CSS pixels; three.js applies the pixel
+  // ratio itself (passing device pixels double-scales on retina)
+  camHelper.visible = camBody.visible = !swapped
+  if (swapped) { filmCam.aspect = w / h; filmCam.updateProjectionMatrix() }
   renderer.setViewport(0, 0, w, h)
-  renderer.setScissorTest(false)
-  renderer.render(scene, mainCam)
-
-  // PiP pass (scissor coords are from bottom-left)
-  camHelper.visible = camBody.visible = pipCam === editorCam
-  if (pipCam === filmCam) { filmCam.aspect = pip.w / pip.h; filmCam.updateProjectionMatrix() }
-  const py = h - pip.y - pip.h
-  renderer.setViewport(pip.x, py, pip.w, pip.h)
-  renderer.setScissor(pip.x, py, pip.w, pip.h)
-  renderer.setScissorTest(true)
-  renderer.render(scene, pipCam)
+  renderer.render(scene, swapped ? filmCam : editorCam)
 })
