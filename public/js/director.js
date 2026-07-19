@@ -145,7 +145,7 @@ function pointerRay(e) {
 }
 
 renderer.domElement.addEventListener('pointerdown', (e) => {
-  if (inPip(e)) { swapped = !swapped; return }
+  if (inPip(e)) { setSwapped(!swapped); return }
   if (swapped || simMode) return // edit only from the editor view
   const hits = pointerRay(e).intersectObjects(stage.children, true)
   if (hits.length) {
@@ -262,7 +262,7 @@ function connectWS() {
     try { m = JSON.parse(ev.data) } catch { return }
     if (m.type === 'presence') dotPhone.classList.toggle('on', m.roles.includes('camera'))
     else if (m.type === 'genState' && generating) {
-      genBtn.textContent = m.status === 'IN_QUEUE'
+      genLabel.textContent = m.status === 'IN_QUEUE'
         ? `In queue${m.position != null ? ` #${m.position}` : ''}…`
         : 'Rendering on fal…'
     }
@@ -313,11 +313,20 @@ scaleEl.oninput = () => {
 // ---------------------------------------------------------------- sim camera
 let simMode = false
 const simBtn = document.getElementById('simBtn')
-simBtn.onclick = () => {
-  simMode = !simMode
-  simBtn.classList.toggle('active', simMode)
-  if (simMode) toast('Sim: WASD move · QZ up/down · arrows look')
+const camViewBtn = document.getElementById('camViewBtn')
+function setSim(on) {
+  simMode = on
+  simBtn.classList.toggle('active', on)
+  if (on) toast('Fly: WASD move · Q/Z up/down · arrows look')
 }
+simBtn.onclick = () => setSim(!simMode)
+// camera view = look through the film camera + fly it with the keys
+function setSwapped(on) {
+  swapped = on
+  camViewBtn.classList.toggle('active', on)
+  setSim(on)
+}
+camViewBtn.onclick = () => setSwapped(!swapped)
 const simEuler = new THREE.Euler(0, 0, 0, 'YXZ')
 function simTick(dt) {
   const sp = (keys.has('ShiftLeft') ? 3.2 : 1.4) * dt
@@ -346,6 +355,8 @@ function simTick(dt) {
 }
 
 // ---------------------------------------------------------------- takes
+const icon = (n) => `<svg class="icon" aria-hidden="true"><use href="#i-${n}"/></svg>`
+
 const takes = []
 let chosenId = null
 let recording = false
@@ -386,14 +397,16 @@ function renderTakes() {
     el.className = 'take' + (t.id === chosenId ? ' chosen' : '')
     el.innerHTML = `<span class="nm">${t.name}</span><span class="dur">${t.dur.toFixed(1)}s</span>`
     const play = document.createElement('button')
-    play.textContent = '▶'
+    play.innerHTML = icon('play')
+    play.title = 'Play this take'
     play.onclick = () => { playback = { take: t, t0: performance.now() } }
     const use = document.createElement('button')
-    use.textContent = '✓'
+    use.innerHTML = icon('check')
     use.title = 'Use this take for generation'
     use.onclick = () => { chosenId = t.id; renderTakes(); updateCameraLanguage() }
     const del = document.createElement('button')
-    del.textContent = '✕'
+    del.innerHTML = icon('x')
+    del.title = 'Delete this take'
     del.onclick = () => {
       takes.splice(takes.indexOf(t), 1)
       if (chosenId === t.id) chosenId = takes.length ? takes[takes.length - 1].id : null
@@ -493,6 +506,7 @@ const DEFAULT_PROMPT = 'Two figures in long dark coats stand facing each other i
 let shotSpec = { prompt: '' }
 
 const genBtn = document.getElementById('genBtn')
+const genLabel = document.getElementById('genLabel')
 let generating = false
 let genMode = 'exact'
 for (const [id, m] of [['modeExact', 'exact'], ['modeBeautiful', 'beautiful']]) {
@@ -510,11 +524,11 @@ async function generate(promptOverride) {
   let prompt = promptOverride || shotSpec.prompt || DEFAULT_PROMPT
   if (genMode === 'beautiful' && shotSpec.camera) prompt += ` Camera: ${shotSpec.camera}`
   generating = true
-  genBtn.textContent = 'Rendering previz…'
+  genLabel.textContent = 'Rendering previz…'
   try {
     await new Promise((r) => setTimeout(r, 30)) // let the label paint
     const frames = renderDepthFrames(take)
-    genBtn.textContent = 'Generating… (~1–3 min)'
+    genLabel.textContent = 'Generating… (~1–3 min)'
     toast('Depth previz uploaded — fal is dreaming')
     const resp = await fetch('/api/generate', {
       method: 'POST',
@@ -530,7 +544,7 @@ async function generate(promptOverride) {
     toast(`Generation failed: ${err.message}`)
   } finally {
     generating = false
-    genBtn.textContent = 'Generate'
+    genLabel.textContent = 'Generate'
   }
 }
 genBtn.onclick = () => generate()
@@ -623,12 +637,12 @@ async function coverage() {
   if (!rig.length) return toast('Nothing on stage to cover')
   const basePrompt = shotSpec.prompt || DEFAULT_PROMPT
   generating = true
-  const covBtn = document.getElementById('covBtn')
-  covBtn.textContent = 'Rendering rig…'
+  const covLabel = document.getElementById('covLabel')
+  covLabel.textContent = 'Rendering rig…'
   try {
     await new Promise((r) => setTimeout(r, 30))
     const renders = rig.map((angle) => ({ angle, frames: renderDepthFramesFrom(angle.poseAt) }))
-    covBtn.textContent = `Generating ${rig.length} angles…`
+    covLabel.textContent = `Generating ${rig.length} angles…`
     toast(`Coverage: ${rig.map((a) => a.key).join(' · ')}`)
     const results = await Promise.all(renders.map(({ angle, frames }) =>
       fetch('/api/generate', {
@@ -641,7 +655,7 @@ async function coverage() {
         return { key: angle.key, ...out }
       }),
     ))
-    covBtn.textContent = 'Cutting…'
+    covLabel.textContent = 'Cutting…'
     const cut = await fetch('/api/multicut', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -656,7 +670,7 @@ async function coverage() {
     toast(`Coverage failed: ${err.message}`)
   } finally {
     generating = false
-    covBtn.textContent = '🎥 Coverage'
+    covLabel.textContent = 'Coverage'
   }
 }
 
@@ -669,7 +683,7 @@ const specChips = document.getElementById('specChips')
 let listening = false
 let mediaRec = null
 
-function setPromptBusy(on, label = '🎬 Parsing direction…') {
+function setPromptBusy(on, label = 'Parsing direction…') {
   promptInput.disabled = on
   promptInput.placeholder = on ? label : PROMPT_PLACEHOLDER
   promptSend.disabled = on || !promptInput.value.trim()
@@ -773,7 +787,7 @@ async function startRecorderFallback() {
     mediaRec.onstop = async () => {
       stream.getTracks().forEach((t) => t.stop())
       setListening(false)
-      setPromptBusy(true, '🎬 Transcribing…')
+      setPromptBusy(true, 'Transcribing…')
       const fr = new FileReader()
       fr.onload = async () => {
         const r = await fetch('/api/transcribe', {
@@ -802,9 +816,9 @@ function stopVoice() {
 function setListening(on) {
   listening = on
   promptMic.classList.toggle('listening', on)
-  promptMic.textContent = on ? '■' : '🎙'
+  promptMic.innerHTML = icon(on ? 'square' : 'mic')
   promptMic.title = on ? 'Stop listening' : 'Speak the shot'
-  promptInput.placeholder = on ? 'Listening — tap ■ to stop' : PROMPT_PLACEHOLDER
+  promptInput.placeholder = on ? 'Listening — tap to stop' : PROMPT_PLACEHOLDER
 }
 
 // the performed move, translated to cinematographer language (for prompt-
@@ -815,7 +829,7 @@ async function updateCameraLanguage() {
   const chip = document.getElementById('camChip')
   if (!take) { chip.style.display = 'none'; return }
   chip.style.display = 'inline-block'
-  chip.textContent = '📷 reading the move…'
+  chip.textContent = 'reading the move…'
   try {
     const r = await fetch('/api/camera-language', {
       method: 'POST',
@@ -825,11 +839,11 @@ async function updateCameraLanguage() {
     const out = await r.json()
     if (!r.ok) throw new Error(out.error || r.statusText)
     cameraLanguage = out
-    chip.textContent = `📷 ${out.move_name}`
+    chip.textContent = out.move_name
     chip.title = out.camera_prompt
     shotSpec.camera = out.camera_prompt
   } catch (err) {
-    chip.textContent = '📷 (unreadable move)'
+    chip.textContent = '(unreadable move)'
     console.error(err)
   }
 }
@@ -900,7 +914,7 @@ renderer.setAnimationLoop(() => {
     recTime.textContent = `${((now - recStart) / 1000).toFixed(1)}s`
     if (now - recStart > 30_000) setRecording(false) // safety stop
   } else {
-    recTime.textContent = playback ? '▶' : '0.0s'
+    recTime.textContent = playback ? 'PLAY' : '0.0s'
   }
 
   const w = renderer.domElement.clientWidth
