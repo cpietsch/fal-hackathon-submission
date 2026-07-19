@@ -136,6 +136,17 @@
   #resultCard .foot { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
   #resultCard .foot span { color: var(--dim); font-size: 12px; margin-right: auto; }
 
+  #pipFrame {
+    position: absolute; z-index: 4; pointer-events: none;
+    border: 1px solid var(--line); border-radius: 6px;
+  }
+  #pipFrame span {
+    position: absolute; top: -1px; left: -1px;
+    background: rgba(25,28,34,.92); color: var(--dim);
+    font-size: 9px; letter-spacing: .12em; padding: 3px 8px;
+    border-radius: 6px 0 6px 0;
+  }
+
   #toast {
     position: absolute; left: 50%; bottom: 86px; transform: translateX(-50%);
     background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
@@ -218,6 +229,8 @@
   <div class="bar" id="bottombar">
     <div id="takes"></div>
   </div>
+
+  <div id="pipFrame"><span id="pipLabel">FILM CAM — CLICK TO ENTER</span></div>
 
   <div id="promptBar">
     <input id="promptInput" type="text" placeholder="Describe the shot — or tap the mic" autocomplete="off" spellcheck="false" />

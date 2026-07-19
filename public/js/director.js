@@ -146,7 +146,7 @@ function pointerRay(e) {
 
 renderer.domElement.addEventListener('pointerdown', (e) => {
   if (inPip(e)) { setSwapped(!swapped); return }
-  if (swapped || simMode) return // edit only from the editor view
+  if (swapped || simMode) { toast('Editing is locked while flying — exit Camera view / Fly controls first'); return }
   const hits = pointerRay(e).intersectObjects(stage.children, true)
   if (hits.length) {
     let g = hits[0].object
@@ -162,6 +162,7 @@ renderer.domElement.addEventListener('pointerdown', (e) => {
   }
 })
 renderer.domElement.addEventListener('pointermove', (e) => {
+  renderer.domElement.style.cursor = inPip(e) ? 'pointer' : ''
   if (!dragging || !selected) return
   const p = new THREE.Vector3()
   if (pointerRay(e).ray.intersectPlane(groundPlane, p)) {
@@ -237,12 +238,26 @@ function inPip(e) {
   return x >= p.x && x <= p.x + p.w && y >= p.y && y <= p.y + p.h
 }
 
+// visible frame + label over the PiP click zone, so the view toggle is
+// discoverable instead of an invisible trap
+const pipFrame = document.getElementById('pipFrame')
+const pipLabel = document.getElementById('pipLabel')
+function updatePipFrame() {
+  const p = pipRect()
+  pipFrame.style.left = `${p.x}px`
+  pipFrame.style.top = `${p.y}px`
+  pipFrame.style.width = `${p.w}px`
+  pipFrame.style.height = `${p.h}px`
+  pipLabel.textContent = swapped ? 'EDITOR — CLICK TO RETURN' : 'FILM CAM — CLICK TO ENTER'
+}
+
 function resize() {
   const w = view.clientWidth
   const h = view.clientHeight
   renderer.setSize(w, h)
   editorCam.aspect = w / h
   editorCam.updateProjectionMatrix()
+  updatePipFrame()
 }
 addEventListener('resize', resize)
 resize()
@@ -330,6 +345,7 @@ function setSwapped(on) {
   swapped = on
   camViewBtn.classList.toggle('active', on)
   setSim(on)
+  updatePipFrame()
 }
 camViewBtn.onclick = () => setSwapped(!swapped)
 const simEuler = new THREE.Euler(0, 0, 0, 'YXZ')
@@ -860,6 +876,14 @@ window.__blocking = {
   setSpec: (s) => { shotSpec = s }, onTranscript, sceneSummary, showResult,
   cameraLanguage: () => cameraLanguage, updateCameraLanguage, coverage, coverageRig,
   renderDepthFramesFrom,
+  selected: () => selected?.userData ?? null,
+  stageInfo: () => stage.children.map((g) => ({ ...g.userData, x: +g.position.x.toFixed(2), z: +g.position.z.toFixed(2) })),
+  screenPosOf: (i) => {
+    const g = stage.children[i]
+    if (!g) return null
+    const v = g.position.clone().add(new THREE.Vector3(0, 0.5, 0)).project(swapped ? filmCam : editorCam)
+    return [Math.round((v.x + 1) / 2 * renderer.domElement.clientWidth), Math.round((1 - v.y) / 2 * renderer.domElement.clientHeight)]
+  },
 }
 document.getElementById('covBtn').onclick = () => coverage()
 
