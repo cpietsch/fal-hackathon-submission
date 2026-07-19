@@ -918,15 +918,15 @@ renderer.setAnimationLoop(() => {
   const w = renderer.domElement.clientWidth
   const h = renderer.domElement.clientHeight
   const pip = pipRect()
-  const dpr = renderer.getPixelRatio()
 
   const mainCam = swapped ? filmCam : editorCam
   const pipCam = swapped ? editorCam : filmCam
 
-  // main pass
+  // main pass — viewport/scissor take CSS pixels; three.js applies the
+  // pixel ratio itself (passing device pixels double-scales on retina)
   camHelper.visible = camBody.visible = mainCam === editorCam
   if (mainCam === filmCam) { filmCam.aspect = w / h; filmCam.updateProjectionMatrix() }
-  renderer.setViewport(0, 0, w * dpr, h * dpr)
+  renderer.setViewport(0, 0, w, h)
   renderer.setScissorTest(false)
   renderer.render(scene, mainCam)
 
@@ -934,8 +934,8 @@ renderer.setAnimationLoop(() => {
   camHelper.visible = camBody.visible = pipCam === editorCam
   if (pipCam === filmCam) { filmCam.aspect = pip.w / pip.h; filmCam.updateProjectionMatrix() }
   const py = h - pip.y - pip.h
-  renderer.setViewport(pip.x * dpr, py * dpr, pip.w * dpr, pip.h * dpr)
-  renderer.setScissor(pip.x * dpr, py * dpr, pip.w * dpr, pip.h * dpr)
+  renderer.setViewport(pip.x, py, pip.w, pip.h)
+  renderer.setScissor(pip.x, py, pip.w, pip.h)
   renderer.setScissorTest(true)
   renderer.render(scene, pipCam)
 })
