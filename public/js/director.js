@@ -660,11 +660,33 @@ async function coverage() {
   }
 }
 
-// ---------------------------------------------------------------- voice direction
-const micBtn = document.getElementById('micBtn')
+// ---------------------------------------------------------------- shot direction (typed or spoken)
+const promptInput = document.getElementById('promptInput')
+const promptMic = document.getElementById('promptMic')
+const promptSend = document.getElementById('promptSend')
+const PROMPT_PLACEHOLDER = 'Describe the shot — or tap the mic'
 const specChips = document.getElementById('specChips')
 let listening = false
 let mediaRec = null
+
+function setPromptBusy(on, label = '🎬 Parsing direction…') {
+  promptInput.disabled = on
+  promptInput.placeholder = on ? label : PROMPT_PLACEHOLDER
+  promptSend.disabled = on || !promptInput.value.trim()
+}
+
+function submitPrompt() {
+  const text = promptInput.value.trim()
+  if (!text || listening) return
+  promptInput.value = ''
+  onTranscript(text)
+}
+promptSend.onclick = submitPrompt
+promptInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') submitPrompt()
+  if (e.key === 'Escape') promptInput.blur()
+})
+promptInput.addEventListener('input', () => { promptSend.disabled = !promptInput.value.trim() })
 
 function sceneSummary() {
   const by = (k) => stage.children.filter((g) => g.userData.kind === k)
@@ -678,10 +700,10 @@ function sceneSummary() {
   return s
 }
 
-async function onTranscript(text) {
-  if (!text || !text.trim()) { toast('Heard nothing — try again'); return }
-  micBtn.textContent = '🎬 Parsing direction…'
-  toast(`You said: “${text.trim().slice(0, 80)}”`)
+async function onTranscript(text, spoken = false) {
+  if (!text || !text.trim()) { setPromptBusy(false); toast('Heard nothing — try again'); return }
+  setPromptBusy(true)
+  if (spoken) toast(`You said: “${text.trim().slice(0, 80)}”`)
   try {
     const r = await fetch('/api/direct', {
       method: 'POST',
@@ -694,7 +716,7 @@ async function onTranscript(text) {
   } catch (err) {
     toast(`Direction failed: ${err.message}`)
   } finally {
-    micBtn.textContent = '🎙 Speak the shot'
+    setPromptBusy(false)
   }
 }
 
@@ -713,7 +735,7 @@ function applySpec(spec) {
 }
 
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition
-micBtn.onclick = () => {
+promptMic.onclick = () => {
   if (listening) { stopVoice(); return }
   if (SR) startSpeechRec()
   else startRecorderFallback()
@@ -729,9 +751,9 @@ function startSpeechRec() {
   speech.onresult = (e) => {
     let interim = ''
     for (const r of e.results) (r.isFinal ? (finalText += r[0].transcript + ' ') : (interim += r[0].transcript))
-    micBtn.textContent = '● ' + (finalText + interim || 'listening…').slice(-26)
+    promptInput.value = (finalText + interim).trimStart() // live transcript in the bar
   }
-  speech.onend = () => { setListening(false); onTranscript(finalText) }
+  speech.onend = () => { setListening(false); promptInput.value = ''; onTranscript(finalText, true) }
   speech.onerror = (e) => {
     speech.onend = null
     setListening(false)
@@ -751,7 +773,7 @@ async function startRecorderFallback() {
     mediaRec.onstop = async () => {
       stream.getTracks().forEach((t) => t.stop())
       setListening(false)
-      micBtn.textContent = '🎬 Transcribing…'
+      setPromptBusy(true, '🎬 Transcribing…')
       const fr = new FileReader()
       fr.onload = async () => {
         const r = await fetch('/api/transcribe', {
@@ -760,7 +782,7 @@ async function startRecorderFallback() {
           body: JSON.stringify({ audio: fr.result }),
         })
         const out = await r.json()
-        onTranscript(r.ok ? out.text : '')
+        onTranscript(r.ok ? out.text : '', true)
       }
       fr.readAsDataURL(new Blob(chunks, { type: 'audio/webm' }))
     }
@@ -779,9 +801,10 @@ function stopVoice() {
 
 function setListening(on) {
   listening = on
-  micBtn.classList.toggle('listening', on)
-  if (on) micBtn.textContent = '● listening… (tap to stop)'
-  else if (!on && micBtn.textContent.startsWith('●')) micBtn.textContent = '🎙 Speak the shot'
+  promptMic.classList.toggle('listening', on)
+  promptMic.textContent = on ? '■' : '🎙'
+  promptMic.title = on ? 'Stop listening' : 'Speak the shot'
+  promptInput.placeholder = on ? 'Listening — tap ■ to stop' : PROMPT_PLACEHOLDER
 }
 
 // the performed move, translated to cinematographer language (for prompt-
