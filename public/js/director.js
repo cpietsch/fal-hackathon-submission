@@ -214,7 +214,6 @@ connectWS()
 // Calibration: first pose (or re-zero) maps phone pose -> film camera anchor.
 // Yaw-only correction keeps gravity honest; position pinned to the anchor.
 const calib = { pending: true, p0: new THREE.Vector3(), yawCorr: new THREE.Quaternion(), ok: false }
-let moveScale = 1
 const livePose = { p: new THREE.Vector3(), q: new THREE.Quaternion(), fresh: false }
 
 function yawOf(q) {
@@ -235,18 +234,13 @@ function onPose(m) {
     calib.ok = true
     toast('Camera zeroed — you are at the mark')
   }
-  const rel = p.clone().sub(calib.p0).applyQuaternion(calib.yawCorr).multiplyScalar(moveScale)
+  const rel = p.clone().sub(calib.p0).applyQuaternion(calib.yawCorr)
   livePose.p.copy(ANCHOR.pos).add(rel)
   livePose.q.copy(calib.yawCorr).multiply(q)
   livePose.fresh = true
 }
 
 document.getElementById('rezeroBtn').onclick = () => { calib.pending = true }
-const scaleEl = document.getElementById('scale')
-scaleEl.oninput = () => {
-  moveScale = Number(scaleEl.value)
-  document.getElementById('scaleVal').textContent = String(moveScale)
-}
 
 // ---------------------------------------------------------------- sim camera
 let simMode = false

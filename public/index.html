@@ -62,8 +62,6 @@
   .icon { width: 15px; height: 15px; flex: none; }
   #tools { left: 14px; width: 156px; }
   #tools .hint { color: var(--dim); font-size: 11px; margin-top: 6px; }
-  #scaleRow { display: flex; align-items: center; gap: 6px; color: var(--dim); font-size: 11px; }
-  #scale { width: 100%; accent-color: var(--accent); }
 
   #bottombar {
     bottom: 0; background: linear-gradient(0deg, rgba(16,18,22,.94), rgba(16,18,22,0));
@@ -172,7 +170,7 @@
   }
   #countdown.show { opacity: 1; }
   #countdown b {
-    font-size: 160px; font-weight: 200; color: #fff; letter-spacing: .04em;
+    font-size: 160px; font-weight: 700; color: #fff; letter-spacing: .04em;
     text-shadow: 0 4px 30px rgba(0,0,0,.6);
     animation: cdpop .8s ease-out both;
   }
@@ -255,7 +253,6 @@
     <button id="simBtn" title="Fly the camera with WASD/QZ + arrow keys"><svg class="icon"><use href="#i-gamepad"/></svg>Fly controls</button>
     <button id="pairBtn"><svg class="icon"><use href="#i-phone"/></svg>Pair phone</button>
     <button id="rezeroBtn" title="Re-anchor the phone camera to its start mark"><svg class="icon"><use href="#i-crosshair"/></svg>Re-zero</button>
-    <div id="scaleRow"><span>move ×</span><input id="scale" type="range" min="0.25" max="4" step="0.25" value="1" /><b id="scaleVal">1</b></div>
     <div class="hint">click the cube to define<br/>the main object</div>
   </div>
 
