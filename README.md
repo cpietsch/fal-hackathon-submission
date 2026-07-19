@@ -18,6 +18,22 @@ their native tools — **space, voice, and movement**:
 
 Built solo during the fal x Sequoia 72-Hour Video Hack (July 2026).
 
+## Beyond the single shot
+
+- **Exact / Beautiful** — two generation dials for one performance. *Exact*
+  constrains a depth model (Wan VACE) with your rendered take: frame-for-frame
+  obedience. *Beautiful* analyzes the take's 6DoF trajectory into numeric
+  features (dolly/truck/pan/orbit/easing/shake — signs resolved to words in
+  code, never by the LLM), phrases them as one cinematographer sentence, and
+  injects it into a frontier model (Seedance 2.0): intent-level obedience,
+  frontier fidelity.
+- **Coverage** — one blocking, a whole multicam rig: wide, over-the-shoulder,
+  insert, and a slow arc are derived automatically from the scene geometry,
+  each generated from its own depth render of the *same* timeline, then
+  auto-edited into a multicam cut. Coverage and b-roll without re-performing
+  a single take — and with structural continuity, because every angle watches
+  the same 3D truth.
+
 ## Why depth conditioning matters
 
 Every prompt-driven video tool treats camera direction as a suggestion.
