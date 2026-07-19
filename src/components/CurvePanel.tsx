@@ -171,6 +171,7 @@ export function CurvePanel({ take, onSmooth, onEditPoint, onResetEdits, onCommit
         <input
           id="smooth" type="range" min="0" max="1" step="0.05"
           value={take.smooth}
+          style={{ '--p': `${take.smooth * 100}%` } as React.CSSProperties}
           onChange={(e) => onSmooth(Number(e.target.value))}
           onPointerUp={onCommit}
         />

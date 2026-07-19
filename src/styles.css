@@ -83,15 +83,15 @@ button.active { background: rgba(232,163,61,.16); color: var(--accent); }
   z-index: 6; width: min(620px, 60vw);
   display: flex; flex-direction: column; gap: 6px;
   background: rgba(25,28,34,.96);
-  border: 1px solid var(--line); border-radius: 18px;
-  padding: 8px; box-shadow: 0 10px 30px rgba(0,0,0,.4);
+  border: 1px solid var(--line); border-radius: 20px;
+  padding: 11px; box-shadow: 0 10px 30px rgba(0,0,0,.4);
 }
 #promptBar:focus-within { border-color: #3d434f; }
-#promptRow { display: flex; align-items: center; gap: 4px; padding-left: 8px; }
-#promptInput { flex: 1; min-width: 0; background: none; border: none; outline: none; color: var(--text); font: inherit; }
+#promptRow { display: flex; align-items: center; gap: 5px; padding-left: 9px; min-height: 40px; }
+#promptInput { flex: 1; min-width: 0; background: none; border: none; outline: none; color: var(--text); font: inherit; font-size: 13.5px; }
 #promptInput::placeholder { color: var(--dim); }
 #refBtn, #promptMic, #promptSend {
-  width: 34px; height: 34px; border-radius: 50%; padding: 0; flex: none;
+  width: 38px; height: 38px; border-radius: 50%; padding: 0; flex: none;
   display: grid; place-items: center;
 }
 #promptSend { background: var(--accent); color: #191307; }
@@ -162,9 +162,25 @@ button.active { background: rgba(232,163,61,.16); color: var(--accent); }
 .chBtn.cz.on { color: #5b8def; }
 #curveCanvas { touch-action: none; }
 #curveCanvas { width: 100%; height: 140px; border-radius: 8px; background: #101216; }
-#smoothRow { display: flex; align-items: center; gap: 8px; color: var(--dim); font-size: 11px; }
-#smoothRow input { flex: 1; accent-color: var(--accent); }
-#smoothRow b { width: 30px; text-align: right; }
+#smoothRow { display: flex; align-items: center; gap: 10px; color: var(--dim); font-size: 11px; letter-spacing: .08em; }
+#smoothRow input {
+  -webkit-appearance: none; appearance: none; flex: 1; height: 4px; border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent) var(--p, 0%), rgba(255,255,255,.12) var(--p, 0%));
+  outline: none; cursor: pointer;
+}
+#smoothRow input::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 15px; height: 15px; border-radius: 50%;
+  background: var(--panel); border: 3px solid var(--accent);
+  box-shadow: 0 2px 8px rgba(0,0,0,.55); transition: transform .12s;
+}
+#smoothRow input::-webkit-slider-thumb:hover { transform: scale(1.18); }
+#smoothRow input::-moz-range-thumb {
+  width: 15px; height: 15px; border-radius: 50%;
+  background: var(--panel); border: 3px solid var(--accent);
+  box-shadow: 0 2px 8px rgba(0,0,0,.55);
+}
+#smoothRow b { width: 30px; text-align: right; color: var(--text); font-variant-numeric: tabular-nums; }
 
 .modal {
   position: absolute; inset: 0; z-index: 20; display: grid; place-items: center;

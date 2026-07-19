@@ -11,15 +11,42 @@ function sampleChannel(fs: Frame[], ch: number, t: number) {
   return a.p[ch] + (b.p[ch] - a.p[ch]) * k
 }
 
-// evenly spaced control points per channel, sampled from the (smoothed) take
-export function initCtrl(base: Frame[], k = 9): CtrlPt[][] {
+// control points at the marked moments of the move — endpoints plus local
+// peaks/valleys (Premiere-style), not a dense uniform grid
+export function initCtrl(base: Frame[], samples = 80): CtrlPt[][] {
   const t1 = base[base.length - 1].t || 1
-  return [0, 1, 2].map((ch) =>
-    Array.from({ length: k }, (_, i) => {
-      const t = (i / (k - 1)) * t1
+  return [0, 1, 2].map((ch) => {
+    const vs = Array.from({ length: samples }, (_, i) => {
+      const t = (i / (samples - 1)) * t1
       return { t, v: sampleChannel(base, ch, t) }
-    }),
-  )
+    })
+    let min = Infinity
+    let max = -Infinity
+    for (const p of vs) { min = Math.min(min, p.v); max = Math.max(max, p.v) }
+    const span = Math.max(max - min, 0.02)
+
+    // track the last non-zero slope direction so plateau extrema (flat
+    // valleys/peaks from key-press moves) are caught too
+    const pts: CtrlPt[] = [vs[0]]
+    const eps = span * 0.004
+    let dir = 0
+    let lastMoveIdx = 0
+    for (let i = 1; i < samples; i++) {
+      const d = vs[i].v - vs[i - 1].v
+      const s = Math.abs(d) < eps ? 0 : Math.sign(d)
+      if (s === 0) continue
+      if (dir !== 0 && s !== dir) {
+        // direction flipped — the extremum sits where movement last stopped
+        const ext = vs[lastMoveIdx]
+        // only keep peaks/valleys that actually stand out from the last kept point
+        if (Math.abs(ext.v - pts[pts.length - 1].v) > span * 0.12) pts.push(ext)
+      }
+      dir = s
+      lastMoveIdx = i
+    }
+    pts.push(vs[samples - 1])
+    return pts
+  })
 }
 
 // uniform Catmull-Rom (Hermite form) through the control points — the
