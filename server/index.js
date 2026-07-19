@@ -113,6 +113,20 @@ app.post('/api/direct', async (req, res) => {
   }
 })
 
+// list generated sessions for the gallery
+app.get('/api/sessions', (_req, res) => {
+  const log = fs.existsSync(path.join(sessionsDir, 'fal-log.jsonl'))
+    ? fs.readFileSync(path.join(sessionsDir, 'fal-log.jsonl'), 'utf8').split('\n').filter(Boolean).map((l) => { try { return JSON.parse(l) } catch { return null } }).filter(Boolean)
+    : []
+  const prompts = Object.fromEntries(log.filter((e) => e.event === 'request').map((e) => [e.id, e.input?.prompt]))
+  const out = fs.readdirSync(sessionsDir)
+    .filter((d) => fs.existsSync(path.join(sessionsDir, d, 'result.mp4')))
+    .sort()
+    .reverse()
+    .map((d) => ({ id: d, control: `/sessions/${d}/control.mp4`, result: `/sessions/${d}/result.mp4`, prompt: prompts[d] || '' }))
+  res.json(out)
+})
+
 // frames: array of data-URL PNGs (the depth-rendered take), fps: control fps
 const DEPTH_MODELS = {
   'wan22-fun': 'fal-ai/wan-22-vace-fun-a14b/depth',

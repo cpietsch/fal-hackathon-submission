@@ -512,11 +512,18 @@ async function generate(promptOverride) {
 }
 genBtn.onclick = () => generate()
 
+let syncTimer = 0
 function showResult(out, prompt) {
   const vc = document.getElementById('vidControl')
   const vr = document.getElementById('vidResult')
   vc.src = out.control
   vr.src = out.local || out.video?.url
+  // keep the loops in lockstep so the trajectory match stays visible
+  clearInterval(syncTimer)
+  syncTimer = setInterval(() => {
+    if (vc.paused || !vc.duration || !vr.duration) return
+    if (Math.abs(vc.currentTime - vr.currentTime) > 0.12) vr.currentTime = vc.currentTime
+  }, 500)
   document.getElementById('resultInfo').textContent = prompt.slice(0, 90) + (prompt.length > 90 ? '…' : '')
   const dl = document.getElementById('resultDl')
   dl.href = out.local || out.video?.url || '#'
