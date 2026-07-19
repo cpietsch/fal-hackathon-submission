@@ -139,6 +139,15 @@ export function createStage(container: HTMLElement, cb: StageCallbacks) {
   hitProxy.position.y = 0.5
   hitProxy.visible = false
   cubeGroup.add(hitProxy)
+  // orange edge outline while the cube has no prompt yet — "define me"
+  const outline = new THREE.LineSegments(
+    new THREE.EdgesGeometry(new THREE.BoxGeometry(1.02, 1.02, 1.02)),
+    new THREE.LineBasicMaterial({ color: 0xe8a33d }),
+  )
+  outline.position.y = 0.5
+  outline.visible = false
+  outline.raycast = () => {} // lines have a fat raycast threshold — keep picking exact
+  cubeGroup.add(outline)
   cubeGroup.userData = { kind: 'prop', id: 1 }
   stage.add(cubeGroup)
 
@@ -289,10 +298,13 @@ export function createStage(container: HTMLElement, cb: StageCallbacks) {
     r2.setSize(W, H, false)
     const cam2 = new THREE.PerspectiveCamera(filmCam.fov, W / H, 0.05, 60)
 
-    const restore = { fog: scene.fog, bg: scene.background, grid: grid.visible, helper: camHelper.visible, body: camBody.visible }
+    const restore = {
+      fog: scene.fog, bg: scene.background,
+      grid: grid.visible, helper: camHelper.visible, body: camBody.visible, outline: outline.visible,
+    }
     scene.fog = null
     scene.background = new THREE.Color(0x000000)
-    grid.visible = camHelper.visible = camBody.visible = false
+    grid.visible = camHelper.visible = camBody.visible = outline.visible = false
     const mat = cube.material as THREE.MeshStandardMaterial
     const emissive = mat.emissive.getHex()
     mat.emissive.setHex(0x000000)
@@ -312,6 +324,7 @@ export function createStage(container: HTMLElement, cb: StageCallbacks) {
     grid.visible = restore.grid
     camHelper.visible = restore.helper
     camBody.visible = restore.body
+    outline.visible = restore.outline
     mat.emissive.setHex(emissive)
     r2.dispose()
     return frames
@@ -401,6 +414,15 @@ export function createStage(container: HTMLElement, cb: StageCallbacks) {
     },
     setSim(on: boolean) { simMode = on },
     setCubeGlow(open: boolean) { glowOpen = open; applyCubeGlow() },
+    setCubeOutline(on: boolean) { outline.visible = on },
+    cornerScreenPos(): [number, number] {
+      // top front-right corner of the cube, nudged slightly outward
+      const v = new THREE.Vector3(0.53, 1.06, 0.53).project(swapped ? filmCam : editorCam)
+      return [
+        Math.round((v.x + 1) / 2 * renderer.domElement.clientWidth),
+        Math.round((1 - v.y) / 2 * renderer.domElement.clientHeight),
+      ]
+    },
     startRecording() { recording = true; recStart = performance.now(); recFrames = [] },
     stopRecording(): Frame[] {
       recording = false

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Box, Check, Crosshair, Disc, Film, Gamepad2, Image as ImageIcon,
-  Mic, Play, Send, Smartphone, Square, Video, X,
+  Mic, Play, Plus, Send, Smartphone, Square, Video, X,
 } from 'lucide-react'
 import { createStage, smoothFrames, type Stage, type Take } from './three/stage'
 import { applyCtrl, initCtrl } from './lib/curves'
@@ -203,6 +203,27 @@ export default function App() {
     addEventListener('keydown', h)
     return () => removeEventListener('keydown', h)
   }, [openCubeBox])
+
+  // undefined cube advertises itself: orange outline + corner "+" button
+  const showPlus = !objectPrompt && !swapped && !boxOpen
+  const plusRef = useRef<HTMLButtonElement>(null)
+  useEffect(() => { stageRef.current?.setCubeOutline(!objectPrompt) }, [objectPrompt])
+  useEffect(() => {
+    if (!showPlus) return
+    let raf = 0
+    const tick = () => {
+      const el = plusRef.current
+      const stage = stageRef.current
+      if (el && stage) {
+        const [x, y] = stage.cornerScreenPos()
+        el.style.left = `${x - 13}px`
+        el.style.top = `${y - 13}px`
+      }
+      raf = requestAnimationFrame(tick)
+    }
+    tick()
+    return () => cancelAnimationFrame(raf)
+  }, [showPlus])
 
   // ------------------------------------------------------------ websocket
   useEffect(() => {
@@ -592,6 +613,12 @@ export default function App() {
             </button>
           </div>
         </div>
+      )}
+
+      {showPlus && (
+        <button id="cubePlus" ref={plusRef} title="Define the main object" onClick={() => openCubeBox(true)}>
+          <Plus className="icon" />
+        </button>
       )}
 
       {countdown !== null && (
