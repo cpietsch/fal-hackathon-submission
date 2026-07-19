@@ -247,6 +247,8 @@ export default function App() {
         }
         else if (m.type === 'pose') stageRef.current?.onPhonePose(m)
         else if (m.type === 'record') recordFlowRef.current(m.on)
+        else if (m.type === 'camStart') recordFlowRef.current(true) // phone START = record button
+        else if (m.type === 'camEnd') recordFlowRef.current(false)
         else if (m.type === 'rezero') stageRef.current?.rezero()
       }
     }

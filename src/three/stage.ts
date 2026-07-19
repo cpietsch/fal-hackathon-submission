@@ -161,7 +161,7 @@ export function createStage(container: HTMLElement, cb: StageCallbacks) {
   let hoveringCube = false
   let glowOpen = false
   const keys = new Set<string>()
-  const livePose = { p: new THREE.Vector3(), q: new THREE.Quaternion(), fresh: false }
+  const livePose = { p: new THREE.Vector3(), q: new THREE.Quaternion(), fresh: false, at: 0 }
   const calib = { pending: true, p0: new THREE.Vector3(), yawCorr: new THREE.Quaternion() }
 
   function applyCubeGlow() {
@@ -262,6 +262,7 @@ export function createStage(container: HTMLElement, cb: StageCallbacks) {
     livePose.p.copy(ANCHOR.pos).add(rel)
     livePose.q.copy(calib.yawCorr).multiply(q)
     livePose.fresh = true
+    livePose.at = performance.now()
   }
 
   // ---- resize
@@ -369,16 +370,17 @@ export function createStage(container: HTMLElement, cb: StageCallbacks) {
     const dt = Math.min(0.05, (now - last) / 1000)
     last = now
 
+    // a live-streaming phone owns the camera; fly keys are the fallback
+    const phoneLive = livePose.fresh && now - livePose.at < 500
     if (playback) {
       const t = (now - playback.t0) / 1000
       const fs = playback.take.frames
       if (t >= playback.take.dur || t * 1000 >= fs[fs.length - 1].t) playback = null
       else samplePose(playback.take, t, filmCam)
-    } else if (simMode) simTick(dt)
-    else if (livePose.fresh) {
+    } else if (phoneLive) {
       filmCam.position.lerp(livePose.p, 0.6)
       filmCam.quaternion.slerp(livePose.q, 0.6)
-    }
+    } else if (simMode) simTick(dt)
 
     camBody.position.copy(filmCam.position)
     camBody.quaternion.copy(filmCam.quaternion)

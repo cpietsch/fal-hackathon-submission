@@ -123,6 +123,7 @@ document.getElementById('startBtn').onclick = async () => {
   renderer.xr.setReferenceSpaceType('local-floor')
   await renderer.xr.setSession(xrSession)
   send({ type: 'rezero' }) // fresh session ⇒ fresh origin on the director
+  send({ type: 'camStart' }) // director jumps into camera view + countdown
   let lastSend = 0
   renderer.setAnimationLoop((_t, frame) => {
     if (!frame) return
@@ -139,6 +140,7 @@ document.getElementById('startBtn').onclick = async () => {
     overlay.classList.remove('on')
     renderer.setAnimationLoop(null)
     xrSession = null
+    send({ type: 'camEnd' }) // stop the take on the director
   })
 }
 document.getElementById('endBtn').onclick = () => xrSession?.end()
@@ -153,6 +155,7 @@ document.getElementById('fallbackBtn').onclick = async () => {
   overlay.classList.add('on')
   hudText.textContent = 'rotation-only'
   send({ type: 'rezero' })
+  send({ type: 'camStart' })
   const zee = new THREE.Vector3(0, 0, 1)
   const euler = new THREE.Euler()
   const q0 = new THREE.Quaternion(-Math.sqrt(0.5), 0, 0, Math.sqrt(0.5)) // camera looks out the back
