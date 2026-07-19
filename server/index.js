@@ -357,6 +357,8 @@ app.post('/api/generate', async (req, res) => {
       fs.writeFileSync(path.join(dir, 'depth-enriched.mp4'),
         Buffer.from(await (await fetch(da.data.video.url)).arrayBuffer()))
       input.video_url = da.data.video.url
+      input.resolution = '720p' // the detail pass should finish sharp
+      input.video_quality = 'maximum'
       broadcastAll({ type: 'genState', status: 'DETAIL', label: 'Final pass…' })
     }
 
