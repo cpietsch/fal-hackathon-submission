@@ -9,6 +9,7 @@ import { CurvePanel } from './components/CurvePanel'
 import { PairModal } from './components/PairModal'
 import { ResultModal, type GenResult } from './components/ResultModal'
 import { HistoryModal } from './components/HistoryModal'
+import { GenProgress } from './components/GenProgress'
 import { useDictation } from './lib/dictation'
 
 const DEFAULT_PROMPT = 'A single object on the floor of an empty concrete warehouse at night, '
@@ -32,7 +33,7 @@ export default function App() {
   const [mainText, setMainText] = useState('')
   const [genMode, setGenMode] = useState<'exact' | 'beautiful'>('exact')
   const [generating, setGenerating] = useState(false)
-  const [genStatus, setGenStatus] = useState<string | null>(null)
+  const [genInfo, setGenInfo] = useState<{ label: string; queuePos: number | null; t0: number } | null>(null)
   const [covStatus, setCovStatus] = useState<string | null>(null)
   const [swapped, setSwapped] = useState(false)
   const [simMode, setSimMode] = useState(false)
@@ -241,9 +242,11 @@ export default function App() {
         try { m = JSON.parse(ev.data) } catch { return }
         if (m.type === 'presence') setPhoneConn(m.roles.includes('camera'))
         else if (m.type === 'genState' && live.current.generating) {
-          setGenStatus(m.status === 'IN_QUEUE'
-            ? `In queue${m.position != null ? ` #${m.position}` : ''}…`
-            : 'Rendering on fal…')
+          setGenInfo((prev) => prev && {
+            ...prev,
+            label: m.status === 'IN_QUEUE' ? 'In queue' : m.status === 'COMPLETED' ? 'Finishing…' : 'Rendering on fal…',
+            queuePos: m.status === 'IN_QUEUE' ? (m.position ?? null) : null,
+          })
         }
         else if (m.type === 'pose') stageRef.current?.onPhonePose(m)
         else if (m.type === 'record') recordFlowRef.current(m.on)
@@ -308,11 +311,11 @@ export default function App() {
     }
     setGenerating(true)
     live.current.generating = true
-    setGenStatus('Rendering previz…')
+    setGenInfo({ label: 'Rendering previz…', queuePos: null, t0: Date.now() })
     try {
       await new Promise((r) => setTimeout(r, 30)) // let the status paint
       const frames = stageRef.current!.renderDepthFrames(take)
-      setGenStatus('Generating… (~1–3 min)')
+      setGenInfo((p) => p && { ...p, label: 'Uploading & starting…' })
       toast('Depth previz uploaded — fal is dreaming')
       const resp = await fetch('/api/generate', {
         method: 'POST',
@@ -329,7 +332,7 @@ export default function App() {
     } finally {
       setGenerating(false)
       live.current.generating = false
-      setGenStatus(null)
+      setGenInfo(null)
     }
   }, [composePrompt, toast])
 
@@ -341,10 +344,12 @@ export default function App() {
     setGenerating(true)
     live.current.generating = true
     setCovStatus('Rendering rig…')
+    setGenInfo({ label: 'Rendering coverage rig…', queuePos: null, t0: Date.now() })
     try {
       await new Promise((r) => setTimeout(r, 30))
       const renders = rig.map((angle) => ({ angle, frames: stage.renderDepthFramesFrom(angle.poseAt) }))
       setCovStatus(`Generating ${rig.length} angles…`)
+      setGenInfo((p) => p && { ...p, label: `Generating ${rig.length} angles…` })
       toast(`Coverage: ${rig.map((a) => a.key).join(' · ')}`)
       const results = await Promise.all(renders.map(({ angle, frames }) =>
         fetch('/api/generate', {
@@ -358,6 +363,7 @@ export default function App() {
         }),
       ))
       setCovStatus('Cutting…')
+      setGenInfo((p) => p && { ...p, label: 'Cutting the multicam…', queuePos: null })
       const cut = await fetch('/api/multicut', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -376,6 +382,7 @@ export default function App() {
       setGenerating(false)
       live.current.generating = false
       setCovStatus(null)
+      setGenInfo(null)
     }
   }, [composePrompt, toast])
 
@@ -543,6 +550,8 @@ export default function App() {
         />
       )}
 
+      {genInfo && <GenProgress label={genInfo.label} queuePos={genInfo.queuePos} t0={genInfo.t0} />}
+
       <div id="promptBar">
         <div id="attachRow" className={hasAttachments ? 'has' : ''}>
           {objectPrompt && (
@@ -568,7 +577,7 @@ export default function App() {
         <div id="promptRow">
           <input
             id="promptInput" type="text" autoComplete="off" spellCheck={false}
-            placeholder={genStatus ?? PROMPT_PLACEHOLDER}
+            placeholder={genInfo ? `${genInfo.label}` : PROMPT_PLACEHOLDER}
             disabled={generating}
             value={mainText}
             onChange={(e) => setMainText(e.target.value)}
