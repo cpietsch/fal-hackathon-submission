@@ -258,7 +258,10 @@ export function createStage(container: HTMLElement, cb: StageCallbacks) {
       calib.pending = false
       cb.onCalibrated()
     }
-    const rel = p.clone().sub(calib.p0).applyQuaternion(calib.yawCorr)
+    // real-world phone motion amplified onto the virtual set — 1m walked
+    // moves the film camera 1.5m, so small rooms still yield real moves
+    const MOVE_SCALE = 1.5
+    const rel = p.clone().sub(calib.p0).applyQuaternion(calib.yawCorr).multiplyScalar(MOVE_SCALE)
     livePose.p.copy(ANCHOR.pos).add(rel)
     livePose.q.copy(calib.yawCorr).multiply(q)
     livePose.fresh = true
