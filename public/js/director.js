@@ -370,7 +370,7 @@ let recFrames = null
 let playback = null // {take, t0}
 
 const recBtn = document.getElementById('recBtn')
-const recTime = document.getElementById('recTime')
+const recLabel = document.getElementById('recLabel')
 const takesEl = document.getElementById('takes')
 recBtn.onclick = () => setRecording(!recording)
 
@@ -379,6 +379,7 @@ function setRecording(on) {
   if (on && playback) return
   recording = on
   recBtn.classList.toggle('rec', on)
+  recLabel.textContent = on ? 'Stop · 0.0s' : 'Start recording'
   send({ type: 'recState', on })
   if (on) {
     recStart = performance.now()
@@ -933,10 +934,8 @@ renderer.setAnimationLoop(() => {
 
   if (recording && recFrames) {
     recFrames.push({ t: now - recStart, p: filmCam.position.toArray(), q: filmCam.quaternion.toArray() })
-    recTime.textContent = `${((now - recStart) / 1000).toFixed(1)}s`
+    recLabel.textContent = `Stop · ${((now - recStart) / 1000).toFixed(1)}s`
     if (now - recStart > 30_000) setRecording(false) // safety stop
-  } else {
-    recTime.textContent = playback ? 'PLAY' : '0.0s'
   }
 
   const w = renderer.domElement.clientWidth

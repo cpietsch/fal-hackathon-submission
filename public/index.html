@@ -69,14 +69,9 @@
     bottom: 0; background: linear-gradient(0deg, rgba(16,18,22,.94), rgba(16,18,22,0));
     padding-bottom: 12px;
   }
-  #recBtn {
-    width: 46px; height: 46px; border-radius: 50%; border: 2px solid var(--line);
-    background: var(--panel); display: grid; place-items: center; flex: none;
-  }
-  #recBtn i { width: 18px; height: 18px; border-radius: 50%; background: var(--rec); transition: border-radius .15s; }
-  #recBtn.rec { border-color: var(--rec); box-shadow: 0 0 14px rgba(229,72,77,.5); }
-  #recBtn.rec i { border-radius: 3px; }
-  #recTime { font-variant-numeric: tabular-nums; color: var(--dim); width: 52px; }
+  #recBtn { width: 100%; color: var(--rec); }
+  #recBtn.rec { background: rgba(229,72,77,.15); animation: micpulse 1.2s infinite; }
+  #recBtn span { font-variant-numeric: tabular-nums; }
   #takes { display: flex; gap: 8px; overflow-x: auto; max-width: max(150px, calc(50vw - 350px)); }
   .take {
     background: rgba(255,255,255,.05); border: 1px solid transparent; border-radius: 8px;
@@ -97,7 +92,7 @@
   #genBtn:disabled { background: rgba(255,255,255,.06); color: var(--dim); }
   #modeRow { display: flex; gap: 4px; margin-bottom: 6px; background: rgba(255,255,255,.04); border-radius: 8px; padding: 3px; }
   #modeRow button { flex: 1; background: none; border-radius: 6px; padding: 5px 0; color: var(--dim); justify-content: center; }
-  #genBtn, #covBtn { justify-content: center; }
+  #genBtn, #covBtn, #recBtn { justify-content: center; }
   #modeRow button.active { background: rgba(232,163,61,.16); color: var(--accent); }
 
   #promptBar {
@@ -169,6 +164,7 @@
       <symbol id="i-film" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M7 3v18"/><path d="M3 7.5h4"/><path d="M3 12h18"/><path d="M3 16.5h4"/><path d="M17 3v18"/><path d="M21 7.5h-4"/><path d="M21 12h-4"/><path d="M21 16.5h-4"/></symbol>
       <symbol id="i-mic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></symbol>
       <symbol id="i-square" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/></symbol>
+      <symbol id="i-disc" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="2"/></symbol>
       <symbol id="i-send" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></symbol>
       <symbol id="i-play" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="6 3 20 12 6 21 6 3"/></symbol>
       <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></symbol>
@@ -206,6 +202,9 @@
 
   <div class="island" id="shotPanel">
     <h3>SHOT</h3>
+    <button id="recBtn" title="Record the camera move as a take (phone or fly controls), up to 30s">
+      <svg class="icon"><use href="#i-disc"/></svg><span id="recLabel">Start recording</span>
+    </button>
     <div id="specChips"></div>
     <div id="camChip" style="display:none; border:1px solid var(--accent); color:var(--accent); border-radius:999px; padding:3px 10px; font-size:11px; margin-bottom:6px;"></div>
     <div id="modeRow">
@@ -217,8 +216,6 @@
   </div>
 
   <div class="bar" id="bottombar">
-    <button id="recBtn" title="Record a take"><i></i></button>
-    <span id="recTime">0.0s</span>
     <div id="takes"></div>
   </div>
 
