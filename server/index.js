@@ -113,6 +113,115 @@ app.post('/api/direct', async (req, res) => {
   }
 })
 
+// ---- trajectory → cinematographer language --------------------------------
+function rotateByQuat(q, v) {
+  const [x, y, z, w] = q
+  const [vx, vy, vz] = v
+  // t = 2 q×v ; v' = v + w t + q×t
+  const tx = 2 * (y * vz - z * vy)
+  const ty = 2 * (z * vx - x * vz)
+  const tz = 2 * (x * vy - y * vx)
+  return [
+    vx + w * tx + y * tz - z * ty,
+    vy + w * ty + z * tx - x * tz,
+    vz + w * tz + x * ty - y * tx,
+  ]
+}
+const dot3 = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+const deg = (r) => (r * 180) / Math.PI
+const norm180 = (d) => ((d + 540) % 360) - 180
+
+function analyzeTrajectory(frames) {
+  const n = frames.length
+  const p = frames.map((f) => f.p)
+  const q = frames.map((f) => f.q)
+  const dur = (frames[n - 1].t - frames[0].t) / 1000
+  const fwd = (qq) => rotateByQuat(qq, [0, 0, -1])
+  const yawOf = (qq) => { const f = fwd(qq); return Math.atan2(f[0], f[2]) }
+  const pitchOf = (qq) => Math.asin(Math.max(-1, Math.min(1, fwd(qq)[1])))
+
+  const f0 = fwd(q[0])
+  const r0 = rotateByQuat(q[0], [1, 0, 0])
+  const d = [p[n - 1][0] - p[0][0], p[n - 1][1] - p[0][1], p[n - 1][2] - p[0][2]]
+  const fh = Math.hypot(f0[0], f0[2]) || 1
+  const dolly = dot3(d, [f0[0] / fh, 0, f0[2] / fh]) // + = along look direction (push-in)
+  const truck = dot3(d, r0)
+  const pedestal = d[1]
+  const pan = norm180(deg(yawOf(q[n - 1]) - yawOf(q[0])))
+  const tilt = deg(pitchOf(q[n - 1]) - pitchOf(q[0]))
+
+  // orbit around stage center (0, z0) in XZ
+  const ang = (pp) => Math.atan2(pp[0], pp[2])
+  const orbit = norm180(deg(ang(p[n - 1]) - ang(p[0])))
+
+  // speed profile + shake
+  let path = 0
+  const speeds = []
+  for (let i = 1; i < n; i++) {
+    const dt = Math.max(1e-3, (frames[i].t - frames[i - 1].t) / 1000)
+    const step = Math.hypot(p[i][0] - p[i - 1][0], p[i][1] - p[i - 1][1], p[i][2] - p[i - 1][2])
+    path += step
+    speeds.push(step / dt)
+  }
+  const mean = (a) => a.reduce((s, v) => s + v, 0) / (a.length || 1)
+  const k = Math.max(1, Math.floor(speeds.length / 5))
+  const easeIn = mean(speeds.slice(0, k)) < 0.6 * mean(speeds.slice(k, -k || undefined))
+  const easeOut = mean(speeds.slice(-k)) < 0.6 * mean(speeds.slice(k, -k || undefined))
+  const smooth = speeds.map((s, i, a) => (i > 0 && i < a.length - 1 ? (a[i - 1] + s + a[i + 1]) / 3 : s))
+  const shake = Math.sqrt(mean(speeds.map((s, i) => (s - smooth[i]) ** 2)))
+
+  const r = (v) => Math.round(v * 100) / 100
+  return {
+    duration_s: r(dur), dolly_m: r(dolly), truck_m: r(truck), pedestal_m: r(pedestal),
+    pan_deg: r(pan), tilt_deg: r(tilt), orbit_around_subject_deg: r(orbit),
+    path_length_m: r(path), mean_speed_mps: r(mean(speeds)),
+    ease_in: easeIn, ease_out: easeOut, handheld_shake: shake > 0.25 ? 'noticeable' : shake > 0.08 ? 'subtle' : 'none',
+  }
+}
+
+const CAM_SYS = `You are a veteran cinematographer. You get numeric features of a
+performed camera move (signs: dolly + = toward subject, truck + = right,
+pedestal + = up, pan + = left, tilt + = up, orbit + = counterclockwise around
+the subject). Write JSON only:
+{"move_name": "2-4 word name", "camera_prompt": "ONE sentence, max 28 words,
+describing ONLY the camera move in professional video-prompt language (dolly,
+truck, arc, pan, crane, push-in, ease), with speed and framing evolution.
+No scene content, no subjects."}`
+
+app.post('/api/camera-language', async (req, res) => {
+  const { frames } = req.body || {}
+  if (!Array.isArray(frames) || frames.length < 5) return res.status(400).json({ error: 'need frames' })
+  try {
+    const features = analyzeTrajectory(frames)
+    const { data } = await fal.subscribe('openrouter/router', {
+      input: {
+        model: 'google/gemini-2.5-flash',
+        system_prompt: CAM_SYS,
+        prompt: JSON.stringify(features),
+        temperature: 0.3,
+        max_tokens: 200,
+      },
+    })
+    const raw = (data?.output || '').replace(/^```(json)?|```$/g, '').trim()
+    const out = JSON.parse(raw.slice(raw.indexOf('{'), raw.lastIndexOf('}') + 1))
+    falLog({ event: 'camera-language', features, out, cost: data?.usage?.cost })
+    res.json({ features, ...out })
+  } catch (err) {
+    console.error('[camera-language] FAILED:', err)
+    res.status(500).json({ error: String(err?.message || err) })
+  }
+})
+
+// save a client-side recording (previz/take exports, demo captures)
+app.post('/api/dev-save', (req, res) => {
+  const { name, data } = req.body || {}
+  if (!name || !data || !/^[\w.-]+$/.test(name)) return res.status(400).json({ error: 'bad name/data' })
+  const dir = path.join(sessionsDir, 'exports')
+  fs.mkdirSync(dir, { recursive: true })
+  fs.writeFileSync(path.join(dir, name), Buffer.from(data.slice(data.indexOf(',') + 1), 'base64'))
+  res.json({ saved: `/sessions/exports/${name}` })
+})
+
 // list generated sessions for the gallery
 app.get('/api/sessions', (_req, res) => {
   const log = fs.existsSync(path.join(sessionsDir, 'fal-log.jsonl'))

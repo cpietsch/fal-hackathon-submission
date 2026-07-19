@@ -658,7 +658,7 @@ function setListening(on) {
 // scripting/debug hook
 window.__blocking = {
   generate, renderDepthFrames, takes: () => takes,
-  setSpec: (s) => { shotSpec = s }, onTranscript, sceneSummary,
+  setSpec: (s) => { shotSpec = s }, onTranscript, sceneSummary, showResult,
 }
 
 // ---------------------------------------------------------------- UI chrome
