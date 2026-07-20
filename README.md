@@ -34,6 +34,20 @@ from attachments the way a chat message collects images:
 Each attachment is its own small system prompt with its own author: the cube
 holds the subject, your body writes the motion, the stills carry the mood.
 
+## An MVP loop, not just a demo
+
+- **Dailies** — every generation lands in a drawer (🎞 in the top bar):
+  hover to play, click to reopen side-by-side with its previz, download.
+- **↻ Again** — same performed take, new seed. The server reuses the
+  already-uploaded control video, so iterating on a shot costs seconds,
+  not another performance.
+- **🎥 Coverage** — wide, insert, and slow-arc angles derived from the
+  blocking, generated in parallel from the same 3D timeline, auto-edited
+  into a multicam cut.
+- **A live queue** — every in-flight job (from any open tab) shows in the
+  prompt bar with its stage, fal queue position, and elapsed time; failures
+  stay visible instead of vanishing.
+
 ## Two dials, one performance
 
 - **Exact** — the performed take renders as MiDaS-style inverse-depth frames

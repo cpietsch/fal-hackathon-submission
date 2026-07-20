@@ -32,7 +32,17 @@ app.use(express.static(path.join(root, 'public')))
 app.use('/vendor/three', express.static(path.join(root, 'node_modules/three')))
 
 app.get('/api/config', (_req, res) => {
-  res.json({ falKeySet: Boolean(process.env.FAL_KEY) })
+  // reachable non-loopback IPv4s, so the pairing QR works even when the
+  // director UI itself was opened via localhost
+  const hosts = Object.values(os.networkInterfaces()).flat()
+    .filter((i) => i && i.family === 'IPv4' && !i.internal)
+    .map((i) => i.address)
+  res.json({
+    falKeySet: Boolean(process.env.FAL_KEY),
+    hosts,
+    httpPort: HTTP_PORT,
+    httpsPort: HTTPS_PORT,
+  })
 })
 
 // ---------------------------------------------------------------- generation
@@ -73,45 +83,6 @@ app.post('/api/transcribe', async (req, res) => {
     res.json({ text: data?.text || '' })
   } catch (err) {
     console.error('[transcribe] FAILED:', err)
-    res.status(500).json({ error: String(err?.message || err) })
-  }
-})
-
-// transcript + blocking summary -> structured shot spec via LLM
-const DIRECT_SYS = `You are a film director's assistant on a virtual production stage.
-The user speaks a shot direction out loud. The shot's geometry is FIXED by a depth
-control video rendered from gray-box proxies; the scene contains exactly what the
-BLOCKING line describes. Map the director's words onto those bodies and objects —
-never invent extra subjects, never remove them.
-
-Reply with STRICT JSON only (no markdown fences, no commentary):
-{"setting": "...", "subjects": "...", "action": "...", "lighting": "...",
- "mood": "...", "style": "...",
- "video_prompt": "one flowing sentence of max 60 words combining all of the above,
- written as a video generation prompt, concrete and visual, ending with cinematic
- style keywords"}
-If the director's direction is vague, make bold cinematic choices rather than
-staying generic. Never include names of real people or copyrighted characters.`
-
-app.post('/api/direct', async (req, res) => {
-  const { transcript, scene } = req.body || {}
-  if (!transcript) return res.status(400).json({ error: 'no transcript' })
-  try {
-    const { data } = await fal.subscribe('openrouter/router', {
-      input: {
-        model: 'google/gemini-2.5-flash',
-        system_prompt: DIRECT_SYS,
-        prompt: `BLOCKING: ${scene || 'unknown'}\nDIRECTOR SAYS: ${transcript}`,
-        temperature: 0.4,
-        max_tokens: 500,
-      },
-    })
-    const raw = (data?.output || '').replace(/^```(json)?|```$/g, '').trim()
-    const spec = JSON.parse(raw.slice(raw.indexOf('{'), raw.lastIndexOf('}') + 1))
-    falLog({ event: 'direct', transcript, spec, cost: data?.usage?.cost })
-    res.json({ spec })
-  } catch (err) {
-    console.error('[direct] FAILED:', err)
     res.status(500).json({ error: String(err?.message || err) })
   }
 })
@@ -277,17 +248,24 @@ app.post('/api/dev-save', (req, res) => {
   res.json({ saved: `/sessions/exports/${name}` })
 })
 
-// list generated sessions for the gallery
+// list generated sessions for the dailies drawer / gallery
 app.get('/api/sessions', (_req, res) => {
   const log = fs.existsSync(path.join(sessionsDir, 'fal-log.jsonl'))
     ? fs.readFileSync(path.join(sessionsDir, 'fal-log.jsonl'), 'utf8').split('\n').filter(Boolean).map((l) => { try { return JSON.parse(l) } catch { return null } }).filter(Boolean)
     : []
-  const prompts = Object.fromEntries(log.filter((e) => e.event === 'request').map((e) => [e.id, e.input?.prompt]))
+  const reqs = Object.fromEntries(log.filter((e) => e.event === 'request').map((e) => [e.id, e]))
   const out = fs.readdirSync(sessionsDir)
     .filter((d) => fs.existsSync(path.join(sessionsDir, d, 'result.mp4')))
     .sort()
     .reverse()
-    .map((d) => ({ id: d, control: `/sessions/${d}/control.mp4`, result: `/sessions/${d}/result.mp4`, prompt: prompts[d] || '' }))
+    .map((d) => ({
+      id: d,
+      control: fs.existsSync(path.join(sessionsDir, d, 'control.mp4')) ? `/sessions/${d}/control.mp4` : null,
+      result: `/sessions/${d}/result.mp4`,
+      prompt: reqs[d]?.input?.prompt || '',
+      mode: d.endsWith('-multicut') ? 'coverage'
+        : String(reqs[d]?.model || '').includes('seedance') ? 'beautiful' : 'exact',
+    }))
   res.json(out)
 })
 
@@ -337,10 +315,14 @@ function broadcastQueue() {
   })
 }
 
+const controlCache = new Map() // sessionId -> uploaded fal URL of its control.mp4
+
 app.post('/api/generate', async (req, res) => {
-  const { frames, prompt, fps = 16, resolution = '480p', modelKey = 'wan22-fun' } = req.body || {}
+  const { frames, prompt, fps = 16, resolution = '480p', modelKey = 'wan22-fun', controlOf } = req.body || {}
   if (!process.env.FAL_KEY) return res.status(400).json({ error: 'FAL_KEY not set' })
-  if (!Array.isArray(frames) || frames.length < 2) return res.status(400).json({ error: 'no frames' })
+  const reuse = controlOf && /^[\w.-]+$/.test(controlOf)
+    && fs.existsSync(path.join(sessionsDir, controlOf, 'control.mp4'))
+  if (!reuse && (!Array.isArray(frames) || frames.length < 2)) return res.status(400).json({ error: 'no frames' })
   if (!prompt) return res.status(400).json({ error: 'no prompt' })
 
   const id = new Date().toISOString().replace(/[:.]/g, '-')
@@ -349,16 +331,25 @@ app.post('/api/generate', async (req, res) => {
   const mode = req.body.mode === 'beautiful' ? 'beautiful' : 'exact'
   jobUpdate(id, { mode, prompt, label: 'Uploading previz…', status: 'PREP' })
   try {
-    frames.forEach((f, i) => {
-      fs.writeFileSync(path.join(dir, `f_${String(i).padStart(4, '0')}.png`),
-        Buffer.from(f.slice(f.indexOf(',') + 1), 'base64'))
-    })
     const controlPath = path.join(dir, 'control.mp4')
-    await runFfmpeg(['-y', '-framerate', String(fps), '-i', path.join(dir, 'f_%04d.png'),
-      '-pix_fmt', 'yuv420p', '-c:v', 'libx264', '-crf', '18', controlPath])
-
-    const file = new File([fs.readFileSync(controlPath)], 'control.mp4', { type: 'video/mp4' })
-    const controlUrl = await fal.storage.upload(file)
+    let controlUrl
+    if (reuse) {
+      // "generate again": same performed take, new seed — skip the re-render
+      fs.copyFileSync(path.join(sessionsDir, controlOf, 'control.mp4'), controlPath)
+      controlUrl = controlCache.get(controlOf)
+    } else {
+      frames.forEach((f, i) => {
+        fs.writeFileSync(path.join(dir, `f_${String(i).padStart(4, '0')}.png`),
+          Buffer.from(f.slice(f.indexOf(',') + 1), 'base64'))
+      })
+      await runFfmpeg(['-y', '-framerate', String(fps), '-i', path.join(dir, 'f_%04d.png'),
+        '-pix_fmt', 'yuv420p', '-c:v', 'libx264', '-crf', '18', controlPath])
+    }
+    if (!controlUrl) {
+      const file = new File([fs.readFileSync(controlPath)], 'control.mp4', { type: 'video/mp4' })
+      controlUrl = await fal.storage.upload(file)
+    }
+    controlCache.set(id, controlUrl)
 
     // exact: depth-constrained VACE. beautiful: camera language in the prompt
     // on a frontier model — follows intent, not geometry.
@@ -411,7 +402,7 @@ app.post('/api/generate', async (req, res) => {
     }
 
     falLog({ event: 'request', id, model, input: { ...input } })
-    console.log(`[gen ${id}] ${frames.length} frames -> ${model}`)
+    console.log(`[gen ${id}] ${reuse ? `control reused from ${controlOf}` : `${frames.length} frames`} -> ${model}`)
 
     const t0 = Date.now()
     if (!genJobs.get(id)?.label?.includes('Final')) jobUpdate(id, { label: 'Generating…' })
@@ -433,9 +424,13 @@ app.post('/api/generate', async (req, res) => {
       fs.writeFileSync(path.join(dir, 'result.mp4'), buf)
     }
     jobEnd(id)
-    res.json({ id, requestId, video: data?.video, local: `/sessions/${id}/result.mp4`, control: `/sessions/${id}/control.mp4` })
+    broadcastAll({ type: 'genDone', id, ok: true }) // refreshed tabs learn work landed in dailies
+    const local = data?.video?.url ? `/sessions/${id}/result.mp4` : null
+    res.json({ id, requestId, video: data?.video, local, control: `/sessions/${id}/control.mp4` })
   } catch (err) {
-    jobEnd(id)
+    // leave the failure visible in every tab's queue line for a few seconds
+    jobUpdate(id, { status: 'FAILED', label: 'Failed', position: null })
+    setTimeout(() => jobEnd(id), 6000)
     falLog({ event: 'error', id, error: String(err) })
     console.error(`[gen ${id}] FAILED:`, err)
     res.status(500).json({ error: String(err?.message || err) })
@@ -458,7 +453,7 @@ function attachWss(server) {
   wss.on('connection', (ws) => {
     peers.add(ws)
     ws.role = '?'
-    if (genJobs.size) broadcastQueue() // late joiners see in-flight work
+    broadcastQueue() // late joiners see in-flight work — or an empty queue reset
     ws.on('message', (data) => {
       const str = data.toString()
       if (str.startsWith('{"type":"hello"')) {

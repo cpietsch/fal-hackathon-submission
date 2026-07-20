@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 
-export default function TopBar({ rec, onRecToggle, onSim, onScale, phoneOn, falOn, onPair, onRezero }) {
+export default function TopBar({ rec, onRecToggle, onSim, onScale, phoneOn, falOn, onPair, onRezero, onDailies }) {
   const [sim, setSim] = useState(false)
   const [scale, setScale] = useState(1)
 
@@ -18,7 +18,7 @@ export default function TopBar({ rec, onRecToggle, onSim, onScale, phoneOn, falO
       <button
         id="simBtn"
         className={sim ? 'active' : ''}
-        title="No phone? Fly the camera with WASD/QE + arrow keys"
+        title="No phone? Fly the camera with WASD + Q/Z up/down + arrow keys"
         onClick={() => { const on = !sim; setSim(on); onSim(on) }}
       >Sim camera</button>
       <div id="scaleRow">
@@ -31,6 +31,7 @@ export default function TopBar({ rec, onRecToggle, onSim, onScale, phoneOn, falO
       </div>
       <span className="stat"><i className={`dot ${phoneOn ? 'on' : ''}`} />phone</span>
       <span className="stat"><i className={`dot ${falOn ? 'on' : ''}`} />fal</span>
+      <button title="Everything this stage has generated" onClick={onDailies}>🎞 Dailies</button>
       <button onClick={onPair}>Pair phone</button>
       <button title="Re-anchor the phone camera to its start mark" onClick={onRezero}>Re-zero</button>
     </div>

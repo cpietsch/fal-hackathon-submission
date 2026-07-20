@@ -117,6 +117,7 @@ export function createEngine(container, handlers = {}) {
   const keys = new Set()
   const onKeyDown = (e) => {
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return
+    if (e.code === 'KeyR' && !e.repeat) handlers.onRecordKey?.()
     keys.add(e.code)
   }
   const onKeyUp = (e) => keys.delete(e.code)
@@ -146,11 +147,20 @@ export function createEngine(container, handlers = {}) {
     s.onmessage = (ev) => {
       let m
       try { m = JSON.parse(ev.data) } catch { return }
-      if (m.type === 'presence') handlers.onPresence?.(m.roles.includes('camera'))
+      if (m.type === 'presence') {
+        const camOn = m.roles.includes('camera')
+        handlers.onPresence?.(camOn)
+        // heal REC desync for a (re)joining phone. Only the tab that is
+        // actually recording answers — a second idle director tab would
+        // otherwise stomp the phone's REC state with its own stale false.
+        if (camOn && recording) wsSend({ type: 'recState', on: true })
+      }
       else if (m.type === 'genQueue') handlers.onGenQueue?.(m.jobs)
+      else if (m.type === 'genDone') handlers.onGenDone?.(m)
       else if (m.type === 'pose') onPose(m)
       else if (m.type === 'record') setRecording(m.on)
-      else if (m.type === 'rezero') calib.pending = true
+      else if (m.type === 'recState') applyRecState(m.on) // another director tab's truth
+      else if (m.type === 'rezero') rezero()
     }
   }
   connectWS()
@@ -159,6 +169,9 @@ export function createEngine(container, handlers = {}) {
   // Calibration: first pose (or re-zero) maps phone pose -> film camera anchor.
   // Yaw-only correction keeps gravity honest; position pinned to the anchor.
   const calib = { pending: true, p0: new THREE.Vector3(), yawCorr: new THREE.Quaternion() }
+  // ignored while recording — a mid-take re-zero would teleport the camera
+  // and write a jump-cut into the take
+  function rezero() { if (!recording) calib.pending = true }
   let moveScale = 1
   const livePose = { p: new THREE.Vector3(), q: new THREE.Quaternion(), fresh: false }
 
@@ -219,6 +232,20 @@ export function createEngine(container, handlers = {}) {
   let recFrames = null
   let playback = null // {take, t0}
 
+  // another director tab started/stopped the take — mirror its state
+  // locally without re-emitting (setRecording would broadcast again)
+  function applyRecState(on) {
+    if (on === recording) return
+    recording = on
+    if (on) {
+      recStart = performance.now()
+      recFrames = []
+    } else {
+      recFrames = null // the tab that ran the take owns it
+    }
+    handlers.onRecording?.({ on, elapsed: 0 })
+  }
+
   function setRecording(on) {
     if (on === recording) return
     if (on && playback) return
@@ -235,6 +262,9 @@ export function createEngine(container, handlers = {}) {
         const take = { id: Date.now(), name: `Take ${++takeCount}`, dur, frames: recFrames }
         recFrames = null
         handlers.onTakeSaved?.(take)
+      } else if (recFrames) {
+        recFrames = null
+        handlers.onToast?.('Take too short — hold REC while you move')
       }
     }
   }
@@ -379,7 +409,10 @@ export function createEngine(container, handlers = {}) {
         lastRecEmit = now
         handlers.onRecording?.({ on: true, elapsed: (now - recStart) / 1000 })
       }
-      if (now - recStart > 30_000) setRecording(false) // safety stop
+      if (now - recStart > 30_000) { // safety stop
+        setRecording(false)
+        handlers.onToast?.('Recording auto-stopped at 30s')
+      }
     }
 
     const w = renderer.domElement.clientWidth
@@ -413,7 +446,7 @@ export function createEngine(container, handlers = {}) {
     setToolboxOpen: (v) => { toolboxOpen = v },
     setMoveScale: (v) => { moveScale = v },
     setSim: (v) => { simMode = v },
-    rezero: () => { calib.pending = true },
+    rezero,
     setRecording,
     toggleRecording: () => setRecording(!recording),
     playTake: (take) => { playback = { take, t0: performance.now() } },

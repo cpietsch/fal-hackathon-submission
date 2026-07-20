@@ -3,13 +3,15 @@ import { useVoice } from '../useVoice.js'
 
 // The toolbox that sticks to the cube: describe the subject by voice or
 // text, confirm, and it docks into the main prompt as the object attachment.
-export default function CubeToolbox({ open, initial, anchor, onConfirm }) {
+export default function CubeToolbox({ open, initial, anchor, onConfirm, onClose, say }) {
   const boxRef = useRef(null)
   const inputRef = useRef(null)
   const [text, setText] = useState(initial)
   const voice = useVoice()
 
-  useEffect(() => { if (open) { setText(initial); inputRef.current?.focus() } }, [open, initial])
+  // the draft survives a click-away; it only resets when the saved object changes
+  useEffect(() => { setText(initial) }, [initial])
+  useEffect(() => { if (open) inputRef.current?.focus() }, [open])
 
   // follow the cube's projected screen position while open
   useEffect(() => {
@@ -38,12 +40,16 @@ export default function CubeToolbox({ open, initial, anchor, onConfirm }) {
         value={text}
         placeholder="What lives inside the cube? Say or type it — e.g. “a vintage red motorcycle, chrome gleaming”"
         onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onConfirm(text.trim()) }
+          if (e.key === 'Escape') onClose()
+        }}
       />
       <div className="row">
         <button
           className={`iconbtn ${voice.listening ? 'listening' : ''}`}
           title="Say it"
-          onClick={() => voice.start((t) => t && setText(t))}
+          onClick={() => voice.start((t) => (t ? setText(t) : say('Didn’t catch that — mic blocked or silent')))}
         >{voice.listening ? '●' : '🎙'}</button>
         <button id="objOk" onClick={() => onConfirm(text.trim())}>✓ Add to shot</button>
       </div>

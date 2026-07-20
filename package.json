@@ -10,6 +10,7 @@
     "dev": "vite",
     "cert": "mkdir -p certs && openssl req -x509 -newkey rsa:2048 -nodes -keyout certs/key.pem -out certs/cert.pem -days 30 -subj /CN=blocking"
   },
+  "engines": { "node": ">=20" },
   "keywords": [],
   "author": "",
   "license": "ISC",

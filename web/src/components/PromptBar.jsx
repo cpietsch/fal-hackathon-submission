@@ -6,7 +6,7 @@ import { uploadRef } from '../api.js'
 // stills) + one look line + send. Below, the live generation queue.
 export default function PromptBar({
   shot, setShot, takeMeta, camLang, onPlayTake, onClearTake, onEditObject,
-  mode, setMode, detail, setDetail, canSend, generating, onSend, queue, say,
+  mode, setMode, detail, setDetail, canSend, canCoverage, generating, onSend, onCoverage, queue, say,
 }) {
   const fileRef = useRef(null)
   const voice = useVoice()
@@ -50,7 +50,11 @@ export default function PromptBar({
           </span>
         )}
         {shot.refs.map((ref) => (
-          <span className="chip ref" key={ref.url} title={ref.name}>
+          <span
+            className={`chip ref${mode === 'beautiful' ? ' inactive' : ''}`}
+            key={ref.url}
+            title={mode === 'beautiful' ? `${ref.name} — references only apply in Exact mode` : ref.name}
+          >
             <img src={ref.url} alt={ref.name} />
             <span className="x" onClick={() => setShot((s) => ({ ...s, refs: s.refs.filter((r) => r !== ref) }))}>✕</span>
           </span>
@@ -60,7 +64,7 @@ export default function PromptBar({
         <button
           className={`iconbtn ${voice.listening ? 'listening' : ''}`}
           title="Say the look"
-          onClick={() => voice.start((t) => t && setShot((s) => ({ ...s, look: t })))}
+          onClick={() => voice.start((t) => (t ? setShot((s) => ({ ...s, look: t })) : say('Didn’t catch that — mic blocked or silent')))}
         >{voice.listening ? '●' : '🎙'}</button>
         <input
           id="lookInput"
@@ -85,7 +89,13 @@ export default function PromptBar({
             onClick={() => setMode('beautiful')}
           >Beautiful</button>
         </div>
-        <button id="sendBtn" disabled={!canSend} title="Needs the object + a recorded move" onClick={onSend}>➤</button>
+        <button
+          className="iconbtn"
+          disabled={!canCoverage}
+          title="Coverage: wide / insert / arc angles from this blocking + an automatic multicam cut"
+          onClick={onCoverage}
+        >🎥</button>
+        <button id="sendBtn" disabled={!canSend} title="Needs a recorded move + the object or a look line (and a FAL_KEY on the server)" onClick={onSend}>➤</button>
       </div>
       <div id="subRow">
         {mode === 'exact' && (
@@ -109,8 +119,8 @@ function QueueLine({ queue, generating }) {
   return (
     <span id="hint">
       {queue.jobs.map((j) => (
-        <span className="job" key={j.id} title={j.prompt}>
-          {j.mode === 'beautiful' ? '✨' : '🎯'} {j.label || j.status}
+        <span className={`job${j.status === 'FAILED' ? ' failed' : ''}`} key={j.id} title={j.prompt}>
+          {j.status === 'FAILED' ? '✖' : j.mode === 'beautiful' ? '✨' : '🎯'} {j.label || j.status}
           {j.position != null ? ` #${j.position}` : ''} · {fmt(j.secs + drift)}
         </span>
       ))}

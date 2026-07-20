@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react'
 
-export default function ResultModal({ result, onClose }) {
+export default function ResultModal({ result, onClose, onAgain }) {
   const controlRef = useRef(null)
   const resultRef = useRef(null)
 
@@ -16,9 +16,10 @@ export default function ResultModal({ result, onClose }) {
     return () => clearInterval(t)
   }, [result])
 
+  const remote = result.url && !result.url.startsWith('/')
   return (
-    <div className="modal" style={{ zIndex: 25 }}>
-      <div id="resultCard">
+    <div className="modal" style={{ zIndex: 25 }} onClick={onClose}>
+      <div id="resultCard" onClick={(e) => e.stopPropagation()}>
         <div className="vids">
           <figure>
             <figcaption>PREVIZ — YOUR PERFORMED TAKE</figcaption>
@@ -31,7 +32,12 @@ export default function ResultModal({ result, onClose }) {
         </div>
         <div className="foot">
           <span>{result.prompt.slice(0, 90)}{result.prompt.length > 90 ? '…' : ''}</span>
-          <a href={result.url || '#'} download><button>Download</button></a>
+          {onAgain && <button title="Same performed take, new seed" onClick={onAgain}>↻ Again</button>}
+          {result.url && (
+            <a href={result.url} download target={remote ? '_blank' : undefined} rel={remote ? 'noreferrer' : undefined}>
+              <button>Download</button>
+            </a>
+          )}
           <button onClick={onClose}>Close</button>
         </div>
       </div>
