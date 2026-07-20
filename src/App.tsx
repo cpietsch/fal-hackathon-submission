@@ -7,7 +7,7 @@ import { createStage, smoothFrames, type Stage, type Take } from './three/stage'
 import { applyCtrl, initCtrl } from './lib/curves'
 import { CurvePanel } from './components/CurvePanel'
 import { PairModal } from './components/PairModal'
-import { ResultModal, type GenResult } from './components/ResultModal'
+import { type GenResult } from './components/ResultModal'
 import { HistoryModal } from './components/HistoryModal'
 import { GenProgress } from './components/GenProgress'
 import { useDictation } from './lib/dictation'
@@ -46,7 +46,6 @@ export default function App() {
   const [toastMsg, setToastMsg] = useState<string | null>(null)
   const [pairOpen, setPairOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
-  const [result, setResult] = useState<{ out: GenResult; prompt: string } | null>(null)
 
   // live mirror of state for stage/ws callbacks created on the first render
   const live = useRef({
@@ -353,7 +352,7 @@ export default function App() {
 
       viaHttp.catch(() => {}) // recovery may win the race — don't leave the loser unhandled
       const out = await Promise.race([viaHttp, viaSessions]) as GenResult
-      setResult({ out, prompt })
+      setHistoryOpen(true) // the finished shot opens as the hero of the history
       return out
     } catch (err: any) {
       console.error(err)
@@ -400,11 +399,8 @@ export default function App() {
         body: JSON.stringify({ ids: results.map((r) => r.id) }),
       }).then((r) => r.json())
       if (cut.error) throw new Error(cut.error)
-      setResult({
-        out: { control: results[0].control, local: cut.result },
-        prompt: `${basePrompt} — multicam cut (${results.length} angles)`,
-      })
-      toast('Coverage cut ready — every angle is in the dailies too')
+      setHistoryOpen(true)
+      toast('Coverage cut ready — every angle is in the history too')
     } catch (err: any) {
       console.error(err)
       toast(`Coverage failed: ${err.message}`)
@@ -663,7 +659,6 @@ export default function App() {
 
       {historyOpen && <HistoryModal onClose={() => setHistoryOpen(false)} />}
       {pairOpen && <PairModal onClose={() => setPairOpen(false)} />}
-      {result && <ResultModal out={result.out} prompt={result.prompt} onClose={() => setResult(null)} />}
 
       <div id="toast" className={toastMsg ? 'show' : ''}>{toastMsg}</div>
     </>

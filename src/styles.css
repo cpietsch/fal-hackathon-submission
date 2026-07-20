@@ -235,11 +235,20 @@ button.active { background: rgba(232,163,61,.16); color: var(--accent); }
 #historyHead { display: flex; align-items: center; justify-content: space-between; }
 #historyHead h3 { font-size: 11px; letter-spacing: .14em; color: var(--dim); }
 .histEmpty { color: var(--dim); padding: 20px 4px; }
+#histScroll { display: flex; flex-direction: column; gap: 14px; overflow-y: auto; }
 #histGrid {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(440px, 1fr));
-  gap: 14px; overflow-y: auto;
+  gap: 14px;
 }
-.histItem { background: var(--panel2); border: 1px solid var(--line); border-radius: 10px; padding: 10px; }
+.histItem { background: var(--panel2); border: 1px solid var(--line); border-radius: 10px; padding: 10px; position: relative; }
+.histItem.hero { border-color: var(--accent); padding: 14px; }
+.histItem.hero .latest {
+  position: absolute; top: -9px; left: 12px;
+  background: var(--accent); color: #191307;
+  font-size: 10px; font-weight: 700; letter-spacing: .1em;
+  border-radius: 999px; padding: 2px 10px;
+}
+.histItem.hero .meta .txt { font-size: 13px; color: var(--text); }
 .histItem .vids { display: flex; gap: 8px; }
 .histItem video { width: calc(50% - 4px); border-radius: 6px; background: #000; }
 .histItem .meta { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
