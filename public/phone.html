@@ -79,6 +79,7 @@ function connect() {
   sock.onmessage = (ev) => {
     let m; try { m = JSON.parse(ev.data) } catch { return }
     if (m.type === 'recState') setRec(m.on)
+    if (m.type === 'countdown') setCd(m.on)
     if (m.type === 'presence') setStatus(m.roles.includes('director'))
   }
 }
@@ -93,14 +94,22 @@ function setStatus(director) {
 
 // ---- recording indicator (state lives on the director)
 let rec = false
+let cd = false // director is counting down 3-2-1 into a take
 function setRec(on) {
   rec = on
+  cd = false
   overlay.classList.toggle('rec', on)
   document.getElementById('recTgl').classList.toggle('rec', on)
   hudText.textContent = on ? '● REC' : 'streaming'
   navigator.vibrate?.(on ? [60, 40, 60] : 60)
 }
-document.getElementById('recTgl').onclick = () => send({ type: 'record', on: !rec })
+function setCd(on) {
+  cd = on
+  if (on) { hudText.textContent = '3 · 2 · 1 …'; navigator.vibrate?.(40) }
+  else if (!rec) hudText.textContent = 'streaming'
+}
+// a tap during the countdown cancels it; otherwise toggle the take
+document.getElementById('recTgl').onclick = () => send({ type: 'record', on: cd ? false : !rec })
 document.getElementById('zeroBtn').onclick = () => { send({ type: 'rezero' }); navigator.vibrate?.(30) }
 
 // ---- WebXR 6DoF streaming
@@ -123,6 +132,7 @@ document.getElementById('startBtn').onclick = async () => {
   renderer.xr.setReferenceSpaceType('local-floor')
   await renderer.xr.setSession(xrSession)
   send({ type: 'rezero' }) // fresh session ⇒ fresh origin on the director
+  send({ type: 'camStart' }) // director jumps into camera view + countdown
   let lastSend = 0
   renderer.setAnimationLoop((_t, frame) => {
     if (!frame) return
@@ -136,7 +146,7 @@ document.getElementById('startBtn').onclick = async () => {
     send({ type: 'pose', p: [r3(p.x), r3(p.y), r3(p.z)], q: [r4(o.x), r4(o.y), r4(o.z), r4(o.w)], t: now })
   })
   xrSession.addEventListener('end', () => {
-    if (rec) send({ type: 'record', on: false }) // don't leave the director recording a dead feed
+    send({ type: 'camEnd' }) // stops the take / countdown on the director
     overlay.classList.remove('on')
     renderer.setAnimationLoop(null)
     xrSession = null
@@ -155,6 +165,7 @@ document.getElementById('fallbackBtn').onclick = async () => {
   overlay.classList.add('on')
   hudText.textContent = 'rotation-only'
   send({ type: 'rezero' })
+  send({ type: 'camStart' })
   const zee = new THREE.Vector3(0, 0, 1)
   const euler = new THREE.Euler()
   const q0 = new THREE.Quaternion(-Math.sqrt(0.5), 0, 0, Math.sqrt(0.5)) // camera looks out the back
@@ -183,7 +194,7 @@ document.getElementById('endBtn').onclick = () => {
   if (fallbackHandler) {
     removeEventListener('deviceorientation', fallbackHandler)
     fallbackHandler = null
-    if (rec) send({ type: 'record', on: false })
+    send({ type: 'camEnd' })
     overlay.classList.remove('on')
   }
 }

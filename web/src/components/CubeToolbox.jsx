@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
+import { Check, Mic, Square } from 'lucide-react'
 import { useVoice } from '../useVoice.js'
 
 // The toolbox that sticks to the cube: describe the subject by voice or
@@ -20,9 +21,8 @@ export default function CubeToolbox({ open, initial, anchor, onConfirm, onClose,
     const track = () => {
       const p = anchor()
       if (p && boxRef.current) {
-        const w = window.innerWidth
-        boxRef.current.style.left = `${Math.max(140, Math.min(w - 140, p.x))}px`
-        boxRef.current.style.top = `${Math.max(70, p.y)}px`
+        boxRef.current.style.left = `${Math.min(innerWidth - 270, Math.max(10, p.x + 28))}px`
+        boxRef.current.style.top = `${Math.min(innerHeight - 190, Math.max(10, p.y - 70))}px`
       }
       raf = requestAnimationFrame(track)
     }
@@ -33,25 +33,27 @@ export default function CubeToolbox({ open, initial, anchor, onConfirm, onClose,
   if (!open) return null
   return (
     <div id="cubeBox" ref={boxRef}>
-      <h3>THE OBJECT</h3>
+      <h3>MAIN OBJECT</h3>
       <textarea
-        id="objInput"
         ref={inputRef}
         value={text}
-        placeholder="What lives inside the cube? Say or type it — e.g. “a vintage red motorcycle, chrome gleaming”"
+        placeholder="What is this object? Speak or type…"
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onConfirm(text.trim()) }
           if (e.key === 'Escape') onClose()
         }}
       />
-      <div className="row">
+      <div id="cubeRow">
         <button
-          className={`iconbtn ${voice.listening ? 'listening' : ''}`}
-          title="Say it"
+          id="cubeMic"
+          className={voice.listening ? 'listening' : ''}
+          title="Dictate"
           onClick={() => voice.start((t) => (t ? setText(t) : say('Didn’t catch that — mic blocked or silent')))}
-        >{voice.listening ? '●' : '🎙'}</button>
-        <button id="objOk" onClick={() => onConfirm(text.trim())}>✓ Add to shot</button>
+        >{voice.listening ? <Square className="icon" /> : <Mic className="icon" />}</button>
+        <button id="cubeOk" title="Attach to the main prompt" onClick={() => onConfirm(text.trim())}>
+          <Check className="icon" />
+        </button>
       </div>
     </div>
   )

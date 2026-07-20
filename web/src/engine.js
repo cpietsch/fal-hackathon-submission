@@ -82,6 +82,7 @@ export function createEngine(container, handlers = {}) {
 
   let cubeFilled = false
   let toolboxOpen = false
+  edges.visible = true // the undefined cube advertises itself
 
   // ---------------------------------------------------------- pointer input
   let swapped = false
@@ -90,9 +91,13 @@ export function createEngine(container, handlers = {}) {
   function pipRect() {
     const w = renderer.domElement.clientWidth
     const h = renderer.domElement.clientHeight
-    const pw = Math.round(Math.min(360, w * 0.28))
+    // fit between the prompt bar (bottom 130) and the vertically-centered
+    // SHOT island (~island bottom h/2+110) — on laptop-height windows the
+    // PiP shrinks instead of hiding under the island
+    const maxPh = Math.max(120, h / 2 - 240)
+    const pw = Math.round(Math.min(360, w * 0.28, maxPh * 16 / 9))
     const ph = Math.round(pw * 9 / 16)
-    return { x: w - pw - 14, y: h - ph - 130, w: pw, h: ph } // CSS px, from top-left; clears the prompt bar
+    return { x: w - pw - 14, y: h - ph - 130, w: pw, h: ph } // CSS px, from top-left
   }
   function inPip(e) {
     const r = renderer.domElement.getBoundingClientRect()
@@ -103,7 +108,7 @@ export function createEngine(container, handlers = {}) {
   }
 
   renderer.domElement.addEventListener('pointerdown', (e) => {
-    if (inPip(e)) { swapped = !swapped; return }
+    if (inPip(e)) { swapped = !swapped; handlers.onSwapped?.(swapped); return }
     const r = renderer.domElement.getBoundingClientRect()
     const ndc = new THREE.Vector2(
       ((e.clientX - r.left) / r.width) * 2 - 1,
@@ -158,7 +163,10 @@ export function createEngine(container, handlers = {}) {
       else if (m.type === 'genQueue') handlers.onGenQueue?.(m.jobs)
       else if (m.type === 'genDone') handlers.onGenDone?.(m)
       else if (m.type === 'pose') onPose(m)
-      else if (m.type === 'record') setRecording(m.on)
+      // record requests go through the app's countdown flow when present
+      else if (m.type === 'record') (handlers.onRecordRequest ?? setRecording)(m.on)
+      else if (m.type === 'camStart') handlers.onCamStart?.()
+      else if (m.type === 'camEnd') handlers.onCamEnd?.()
       else if (m.type === 'recState') applyRecState(m.on) // another director tab's truth
       else if (m.type === 'rezero') rezero()
     }
@@ -172,8 +180,9 @@ export function createEngine(container, handlers = {}) {
   // ignored while recording — a mid-take re-zero would teleport the camera
   // and write a jump-cut into the take
   function rezero() { if (!recording) calib.pending = true }
-  let moveScale = 1
-  const livePose = { p: new THREE.Vector3(), q: new THREE.Quaternion(), fresh: false }
+  // room-scale steps read small on the virtual set — amplify (tuned on-device)
+  let moveScale = 5
+  const livePose = { p: new THREE.Vector3(), q: new THREE.Quaternion(), at: -Infinity }
 
   const yawOf = (q) => {
     const f = new THREE.Vector3(0, 0, -1).applyQuaternion(q)
@@ -194,7 +203,7 @@ export function createEngine(container, handlers = {}) {
     const rel = p.clone().sub(calib.p0).applyQuaternion(calib.yawCorr).multiplyScalar(moveScale)
     livePose.p.copy(ANCHOR.pos).add(rel)
     livePose.q.copy(calib.yawCorr).multiply(q)
-    livePose.fresh = true
+    livePose.at = performance.now()
   }
 
   // ------------------------------------------------------------- sim camera
@@ -248,7 +257,7 @@ export function createEngine(container, handlers = {}) {
 
   function setRecording(on) {
     if (on === recording) return
-    if (on && playback) return
+    if (on) playback = null // rolling a take always wins over a replay
     recording = on
     wsSend({ type: 'recState', on })
     if (on) {
@@ -387,12 +396,15 @@ export function createEngine(container, handlers = {}) {
     const dt = Math.min(0.05, (now - last) / 1000)
     last = now
 
+    // a live phone pose outranks the fly keys; a phone that stopped
+    // streaming hands the camera back to them
+    const phoneLive = now - livePose.at < 500
     if (playback) playbackTick()
-    else if (simMode) simTick(dt)
-    else if (livePose.fresh) {
+    else if (phoneLive) {
       filmCam.position.lerp(livePose.p, 0.6)
       filmCam.quaternion.slerp(livePose.q, 0.6)
     }
+    else if (simMode) simTick(dt)
 
     camBody.position.copy(filmCam.position)
     camBody.quaternion.copy(filmCam.quaternion)
@@ -442,10 +454,12 @@ export function createEngine(container, handlers = {}) {
 
   return {
     // state the UI pushes down
-    setCubeFilled: (v) => { cubeFilled = v },
+    setCubeFilled: (v) => { cubeFilled = v; edges.visible = !v },
     setToolboxOpen: (v) => { toolboxOpen = v },
     setMoveScale: (v) => { moveScale = v },
     setSim: (v) => { simMode = v },
+    setSwapped: (v) => { swapped = v },
+    isSwapped: () => swapped,
     rezero,
     setRecording,
     toggleRecording: () => setRecording(!recording),
@@ -453,6 +467,13 @@ export function createEngine(container, handlers = {}) {
     // where the cube's toolbox should anchor, in CSS px
     projectCubeTop: () => {
       cubeTop.set(0, 1.45, 0).project(swapped ? filmCam : editorCam)
+      const w = renderer.domElement.clientWidth
+      const h = renderer.domElement.clientHeight
+      return { x: (cubeTop.x * 0.5 + 0.5) * w, y: (-cubeTop.y * 0.5 + 0.5) * h }
+    },
+    // the cube's top-front corner, for the pinned "+" affordance
+    projectCubeCorner: () => {
+      cubeTop.set(0.6, 1.26, 0.6).project(swapped ? filmCam : editorCam)
       const w = renderer.domElement.clientWidth
       const h = renderer.domElement.clientHeight
       return { x: (cubeTop.x * 0.5 + 0.5) * w, y: (-cubeTop.y * 0.5 + 0.5) * h }

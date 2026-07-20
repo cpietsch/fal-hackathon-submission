@@ -1,9 +1,12 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
+import { Folder, Plus } from 'lucide-react'
 import { createEngine } from './engine.js'
 import { cameraLanguage, generateShot, getConfig, multicut } from './api.js'
 import TopBar from './components/TopBar.jsx'
+import { CameraIsland, ShotIsland } from './components/Islands.jsx'
 import CubeToolbox from './components/CubeToolbox.jsx'
 import PromptBar from './components/PromptBar.jsx'
+import GenStack from './components/GenProgress.jsx'
 import PairModal from './components/PairModal.jsx'
 import ResultModal from './components/ResultModal.jsx'
 import DailiesDrawer from './components/DailiesDrawer.jsx'
@@ -30,6 +33,9 @@ export default function App() {
   const [phoneOn, setPhoneOn] = useState(false)
   const [falOn, setFalOn] = useState(null) // null = unknown (config not fetched yet)
   const [rec, setRec] = useState({ on: false, elapsed: 0 })
+  const [countdown, setCountdown] = useState(null)
+  const [swapped, setSwapped] = useState(false)
+  const [simMode, setSimMode] = useState(false)
   const [mode, setMode] = useState('exact')
   const [detail, setDetail] = useState(true)
   const [generating, setGenerating] = useState(false)
@@ -37,8 +43,7 @@ export default function App() {
   const [pairOpen, setPairOpen] = useState(false)
   const [dailiesOpen, setDailiesOpen] = useState(false)
   const [result, setResult] = useState(null) // {control, url, prompt, id, mode}
-  const [toast, setToast] = useState(null) // {msg, key}
-  const [, setTick] = useState(0) // re-render for queue elapsed seconds
+  const [toast, setToast] = useState(null) // {msg, key, dur}
 
   const say = useCallback((msg, dur) => setToast({ msg, key: Date.now(), dur }), [])
   const generatingRef = useRef(false)
@@ -58,6 +63,54 @@ export default function App() {
     }
   }, [say])
 
+  // ---------------------------------------------------- record flow (3-2-1)
+  const cdTimer = useRef(0)
+  const recRef = useRef(false)
+  useEffect(() => { recRef.current = rec.on }, [rec.on])
+
+  // camera view brings the fly keys along — with no phone streaming you can
+  // still perform the move; a live phone pose outranks the keys anyway
+  const enterCamView = useCallback((on) => {
+    setSwapped(on)
+    engineRef.current?.setSwapped(on)
+    setSimMode(on)
+    engineRef.current?.setSim(on)
+  }, [])
+
+  const startRecordFlow = useCallback((on) => {
+    if (!on) {
+      if (cdTimer.current) { // cancel a pending countdown
+        clearTimeout(cdTimer.current)
+        cdTimer.current = 0
+        setCountdown(null)
+        engineRef.current?.wsSend({ type: 'countdown', on: false })
+        enterCamView(false)
+        return
+      }
+      engineRef.current?.setRecording(false)
+      enterCamView(false)
+      return
+    }
+    if (recRef.current || cdTimer.current) return
+    enterCamView(true)
+    engineRef.current?.wsSend({ type: 'countdown', on: true }) // phone HUD mirrors it
+    let n = 3
+    const tick = () => {
+      if (n === 0) {
+        setCountdown(null)
+        cdTimer.current = 0
+        engineRef.current?.setRecording(true)
+        return
+      }
+      setCountdown(n)
+      n--
+      cdTimer.current = window.setTimeout(tick, 800)
+    }
+    tick()
+  }, [enterCamView])
+  const flowRef = useRef(startRecordFlow)
+  flowRef.current = startRecordFlow
+
   useEffect(() => {
     const engine = createEngine(stageRef.current, {
       onCubeClick: () => setBoxOpen(true),
@@ -65,12 +118,16 @@ export default function App() {
       onTakeSaved,
       onPresence: setPhoneOn,
       onGenQueue: (jobs) => setQueue({ jobs, at: Date.now() }),
-      onRecording: setRec,
-      onRecordKey: () => engineRef.current?.toggleRecording(),
+      onRecording: (r) => { setRec(r); if (!r.on) enterCamView(false) },
+      onSwapped: setSwapped,
+      onRecordKey: () => flowRef.current(!(recRef.current || cdTimer.current)),
+      onRecordRequest: (on) => flowRef.current(on),
+      onCamStart: () => flowRef.current(true), // phone START = roll a take
+      onCamEnd: () => flowRef.current(false),
       onToast: say,
       // a tab that refreshed mid-generation (or never started one) still
       // learns where finished work landed
-      onGenDone: (m) => { if (!generatingRef.current) say('Shot finished — it’s in Dailies', 5000) },
+      onGenDone: () => { if (!generatingRef.current) say('Shot finished — it’s in Dailies', 5000) },
     })
     engineRef.current = engine
     // a transient config failure must not permanently disable Send —
@@ -79,22 +136,26 @@ export default function App() {
     fetchConfig()
     addEventListener('focus', fetchConfig)
     return () => { removeEventListener('focus', fetchConfig); engine.dispose() }
-  }, [onTakeSaved])
+  }, [onTakeSaved, say])
 
   useEffect(() => { localStorage.setItem(STORE_KEY, JSON.stringify(shot)) }, [shot])
   useEffect(() => { engineRef.current?.setCubeFilled(Boolean(shot.object)) }, [shot.object])
   useEffect(() => { engineRef.current?.setToolboxOpen(boxOpen) }, [boxOpen])
 
-  // tick once a second while jobs are in flight so elapsed times count up
-  useEffect(() => {
-    if (!queue.jobs.length) return undefined
-    const t = setInterval(() => setTick((n) => n + 1), 1000)
-    return () => clearInterval(t)
-  }, [queue.jobs.length])
+  const refreshFal = useCallback(() => {
+    getConfig()
+      .then((c) => {
+        setFalOn(Boolean(c.falKeySet))
+        say(c.falKeySet
+          ? 'fal key loaded — ready to generate'
+          : 'FAL_KEY not set — add FAL_KEY=… to .env and restart the server')
+      })
+      .catch(() => say('Server unreachable'))
+  }, [say])
 
   const composePrompt = useCallback(() => {
     const parts = []
-    if (shot.object) parts.push(shot.object)
+    if (shot.object) parts.push(`Main object: ${shot.object}`)
     if (shot.look) parts.push(shot.look)
     let prompt = parts.join('. ') || DEFAULT_PROMPT
     if (mode === 'beautiful' && camLang?.camera_prompt) prompt += ` Camera: ${camLang.camera_prompt}`
@@ -104,7 +165,7 @@ export default function App() {
   const generate = useCallback(async (promptOverride) => {
     if (generating) return say('Already generating…')
     const take = takeRef.current
-    if (!take) return say('Record a camera move first')
+    if (!take) return say('Record a camera move first — the motion is part of the prompt')
     const prompt = promptOverride || composePrompt()
     setGenerating(true)
     try {
@@ -132,7 +193,7 @@ export default function App() {
     if (generating) return say('Already generating…')
     if (!result?.id) return null
     setGenerating(true)
-    setResult(null) // hand off to the queue line; the new result reopens the modal
+    setResult(null) // hand off to the progress card; the new result reopens the modal
     say('New seed rolling — progress in the corner')
     try {
       const out = await generateShot({
@@ -197,6 +258,7 @@ export default function App() {
       again,
       result: () => result,
       queue: () => queue.jobs,
+      recordFlow: startRecordFlow,
     }
   })
 
@@ -213,6 +275,25 @@ export default function App() {
     return () => removeEventListener('keydown', onKey)
   }, [result, dailiesOpen, pairOpen, boxOpen])
 
+  // the undefined cube advertises itself: pinned "+" at its top corner
+  const showPlus = !shot.object && !boxOpen && !swapped
+  const plusRef = useRef(null)
+  useEffect(() => {
+    if (!showPlus) return undefined
+    let raf
+    const track = () => {
+      const el = plusRef.current
+      const p = engineRef.current?.projectCubeCorner()
+      if (el && p) {
+        el.style.left = `${p.x - 13}px`
+        el.style.top = `${p.y - 13}px`
+      }
+      raf = requestAnimationFrame(track)
+    }
+    track()
+    return () => cancelAnimationFrame(raf)
+  }, [showPlus])
+
   // falOn === false blocks (server confirmed no key); null (unknown) allows —
   // the server would answer with a clear error anyway
   const canSend = Boolean(takeMeta) && Boolean(shot.object || shot.look) && !generating && falOn !== false
@@ -220,16 +301,30 @@ export default function App() {
   return (
     <>
       <div id="view" ref={stageRef} />
-      <TopBar
-        rec={rec}
-        onRecToggle={() => engineRef.current.toggleRecording()}
-        onSim={(on) => { engineRef.current.setSim(on); if (on) say('Sim: WASD move · QZ up/down · arrows look') }}
-        onScale={(v) => engineRef.current.setMoveScale(v)}
-        phoneOn={phoneOn}
-        falOn={falOn}
+      <TopBar phoneOn={phoneOn} falOn={falOn} onPair={() => setPairOpen(true)} onFalCheck={refreshFal} />
+      <CameraIsland
+        swapped={swapped}
+        onCamView={(on) => enterCamView(on)}
+        simMode={simMode}
+        onSim={(on) => {
+          setSimMode(on)
+          engineRef.current.setSim(on)
+          if (on) say('Fly: WASD move · Q/Z up/down · arrows look')
+        }}
         onPair={() => setPairOpen(true)}
         onRezero={() => engineRef.current.rezero()}
-        onDailies={() => setDailiesOpen(true)}
+      />
+      <ShotIsland
+        recording={rec.on}
+        countdown={countdown}
+        recSec={rec.elapsed}
+        onRecord={() => startRecordFlow(!(rec.on || cdTimer.current))}
+        mode={mode}
+        setMode={setMode}
+        detail={detail}
+        setDetail={setDetail}
+        canCoverage={Boolean(shot.object || shot.look) && !generating && falOn !== false}
+        onCoverage={() => coverage()}
       />
       <CubeToolbox
         open={boxOpen}
@@ -240,9 +335,15 @@ export default function App() {
         onConfirm={(text) => {
           setShot((s) => ({ ...s, object: text }))
           setBoxOpen(false)
-          if (text) say('Object added to the shot')
+          say(text ? 'Object attached to the main prompt' : 'Object cleared')
         }}
       />
+      {showPlus && (
+        <button id="cubePlus" ref={plusRef} title="Define the main object" onClick={() => setBoxOpen(true)}>
+          <Plus className="icon" />
+        </button>
+      )}
+      <GenStack queue={queue} />
       <PromptBar
         shot={shot}
         setShot={setShot}
@@ -252,17 +353,15 @@ export default function App() {
         onClearTake={() => { takeRef.current = null; setTakeMeta(null); setCamLang(null) }}
         onEditObject={() => setBoxOpen(true)}
         mode={mode}
-        setMode={setMode}
-        detail={detail}
-        setDetail={setDetail}
         canSend={canSend}
-        canCoverage={Boolean(shot.object || shot.look) && !generating && falOn !== false}
         generating={generating}
         onSend={() => generate()}
-        onCoverage={() => coverage()}
-        queue={queue}
         say={say}
       />
+      {countdown !== null && <div id="countdown"><b key={countdown}>{countdown}</b></div>}
+      <button id="historyBtn" title="Dailies — everything this stage has generated" onClick={() => setDailiesOpen(true)}>
+        <Folder className="icon" />
+      </button>
       {pairOpen && <PairModal onClose={() => setPairOpen(false)} />}
       {dailiesOpen && (
         <DailiesDrawer

@@ -1,39 +1,19 @@
-import React, { useState } from 'react'
+import React from 'react'
 
-export default function TopBar({ rec, onRecToggle, onSim, onScale, phoneOn, falOn, onPair, onRezero, onDailies }) {
-  const [sim, setSim] = useState(false)
-  const [scale, setScale] = useState(1)
-
+// brand + live status pills; the working controls live in the side islands
+export default function TopBar({ phoneOn, falOn, onPair, onFalCheck }) {
   return (
     <div className="bar" id="topbar">
       <div className="wordmark">BLOCK<span>ING</span></div>
       <div className="tag">direct, don&apos;t prompt</div>
-      <button
-        id="recBtn"
-        className={rec.on ? 'rec' : ''}
-        title="Record the camera move (or use REC on the phone)"
-        onClick={onRecToggle}
-      ><i /></button>
-      <span id="recTime">{rec.on ? `${rec.elapsed.toFixed(1)}s` : '0.0s'}</span>
-      <button
-        id="simBtn"
-        className={sim ? 'active' : ''}
-        title="No phone? Fly the camera with WASD + Q/Z up/down + arrow keys"
-        onClick={() => { const on = !sim; setSim(on); onSim(on) }}
-      >Sim camera</button>
-      <div id="scaleRow">
-        <span>move ×</span>
-        <input
-          id="scale" type="range" min="0.25" max="4" step="0.25" value={scale}
-          onChange={(e) => { const v = Number(e.target.value); setScale(v); onScale(v) }}
-        />
-        <b>{scale}</b>
-      </div>
-      <span className="stat"><i className={`dot ${phoneOn ? 'on' : ''}`} />phone</span>
-      <span className="stat"><i className={`dot ${falOn ? 'on' : ''}`} />fal</span>
-      <button title="Everything this stage has generated" onClick={onDailies}>🎞 Dailies</button>
-      <button onClick={onPair}>Pair phone</button>
-      <button title="Re-anchor the phone camera to its start mark" onClick={onRezero}>Re-zero</button>
+      <button className={`statTgl${phoneOn ? ' on' : ''}`} title="Click to pair your phone" onClick={onPair}>
+        <i className={`dot${phoneOn ? ' on' : ''}`} />phone
+        <span className="st">{phoneOn ? 'connected' : 'not connected'}</span>
+      </button>
+      <button className={`statTgl${falOn ? ' on' : ''}`} title="Click to re-check the fal key" onClick={onFalCheck}>
+        <i className={`dot${falOn ? ' on' : ''}`} />fal
+        <span className="st">{falOn ? 'ready' : falOn === false ? 'no key' : 'checking…'}</span>
+      </button>
     </div>
   )
 }
