@@ -1,12 +1,23 @@
+import { fileURLToPath } from 'url'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
-// Director app lives in web/, builds to web/dist (served by server/index.js).
-// `npm run dev` proxies API + WS to a running `npm start` on :8000.
+// Two entries share web/: the desktop director (index.html) and the
+// standalone phone app (mobile.html, served at /m). Both build to web/dist,
+// served by server/index.js. `npm run dev` proxies API + WS to :8000.
 export default defineConfig({
   root: 'web',
   plugins: [react()],
-  build: { outDir: 'dist', emptyOutDir: true },
+  build: {
+    outDir: 'dist',
+    emptyOutDir: true,
+    rollupOptions: {
+      input: {
+        main: fileURLToPath(new URL('./web/index.html', import.meta.url)),
+        mobile: fileURLToPath(new URL('./web/mobile.html', import.meta.url)),
+      },
+    },
+  },
   server: {
     host: '0.0.0.0',
     proxy: {

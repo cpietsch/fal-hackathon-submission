@@ -25,9 +25,21 @@ if (fs.existsSync(envPath)) {
 
 const app = express()
 app.use(express.json({ limit: '100mb' }))
+
+// The standalone phone studio lives at /m. Phones opening the root get sent
+// there automatically; ?full=1 keeps the desktop director on a phone.
+const distDir = path.join(root, 'web/dist')
+app.get('/m', (_req, res) => res.sendFile(path.join(distDir, 'mobile.html')))
+app.get('/', (req, res, next) => {
+  const ua = req.get('user-agent') || ''
+  const isPhone = /Android|iPhone|iPod|Windows Phone|\bMobile\b/i.test(ua)
+  if (isPhone && req.query.full == null) return res.redirect('/m')
+  next()
+})
+
 // the React director app (vite build) is the root; public/ keeps the
 // phone capture page + gallery, which stay deliberately build-free
-app.use(express.static(path.join(root, 'web/dist')))
+app.use(express.static(distDir))
 app.use(express.static(path.join(root, 'public')))
 app.use('/vendor/three', express.static(path.join(root, 'node_modules/three')))
 
@@ -319,6 +331,7 @@ const controlCache = new Map() // sessionId -> uploaded fal URL of its control.m
 
 app.post('/api/generate', async (req, res) => {
   const { frames, prompt, fps = 16, resolution = '480p', modelKey = 'wan22-fun', controlOf } = req.body || {}
+  const aspect = req.body.aspect === '9:16' ? '9:16' : '16:9' // mobile shoots portrait
   if (!process.env.FAL_KEY) return res.status(400).json({ error: 'FAL_KEY not set' })
   const reuse = controlOf && /^[\w.-]+$/.test(controlOf)
     && fs.existsSync(path.join(sessionsDir, controlOf, 'control.mp4'))
@@ -357,7 +370,7 @@ app.post('/api/generate', async (req, res) => {
       ? 'bytedance/seedance-2.0/fast/text-to-video'
       : DEPTH_MODELS[modelKey] || DEPTH_MODELS['wan22-fun']
     const input = mode === 'beautiful'
-      ? { prompt, resolution: '720p', duration: '5', aspect_ratio: '16:9', generate_audio: false }
+      ? { prompt, resolution: '720p', duration: '5', aspect_ratio: aspect, generate_audio: false }
       : {
           prompt,
           video_url: controlUrl,
@@ -365,7 +378,7 @@ app.post('/api/generate', async (req, res) => {
           match_input_num_frames: true,
           match_input_frames_per_second: true,
           resolution,
-          aspect_ratio: '16:9',
+          aspect_ratio: aspect,
         }
     // reference stills steer identity/atmosphere on the depth-constrained path
     // (validated charref mechanism; the Seedance t2v endpoint takes no refs)

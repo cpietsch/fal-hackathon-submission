@@ -34,6 +34,18 @@ from attachments the way a chat message collects images:
 Each attachment is its own small system prompt with its own author: the cube
 holds the subject, your body writes the motion, the stills carry the mood.
 
+## On a phone alone
+
+Open the site on an Android phone (or go to `/m`) and the whole studio fits
+one device — no desktop, no pairing. The phone *is* the camera: a portrait
+9:16 viewfinder shows the exact frame that will render. Tap the cube to say
+what it is, **drag to orbit / pinch to push in** (or switch to **Move** and
+aim by tilting the phone), hold the shutter through a 3-2-1 count to perform
+the move, add a look line by voice or text, and generate — vertical video,
+made entirely in your hand. Dailies, regenerate, Exact/Beautiful, and 2-pass
+detail all come along. (The desktop director stays at `/`; `/?full=1` opens
+it on a phone.)
+
 ## An MVP loop, not just a demo
 
 - **Dailies** — every generation lands in a drawer (🎞 in the top bar):

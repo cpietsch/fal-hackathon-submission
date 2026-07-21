@@ -313,44 +313,54 @@ export function createEngine(container, handlers = {}) {
   })
 
   // MiDaS-style inverse depth (white = near), exactly n frames (VACE min 81).
-  function renderDepthFramesFrom(poseAt, n = 81) {
-    const W = 832
-    const H = 480
+  // one offscreen renderer, reused — a fresh WebGLRenderer per render leaks a
+  // GL context and Chrome eventually evicts the (oldest) live one
+  const DW = 832
+  const DH = 480
+  let depthR = null
+  let depthCam = null
+  function ensureDepthRenderer() {
+    if (depthR) return
     const cv = document.createElement('canvas')
-    cv.width = W
-    cv.height = H
-    const r2 = new THREE.WebGLRenderer({ canvas: cv, antialias: true })
-    r2.setPixelRatio(1)
-    r2.setSize(W, H, false)
-    const cam2 = new THREE.PerspectiveCamera(filmCam.fov, W / H, 0.05, 60)
+    cv.width = DW
+    cv.height = DH
+    depthR = new THREE.WebGLRenderer({ canvas: cv, antialias: true })
+    depthR.setPixelRatio(1)
+    depthR.setSize(DW, DH, false)
+    depthCam = new THREE.PerspectiveCamera(filmCam.fov, DW / DH, 0.05, 60)
+  }
 
+  function renderDepthFramesFrom(poseAt, n = 81) {
+    ensureDepthRenderer()
+    const cv = depthR.domElement
     const restore = {
       fog: scene.fog, bg: scene.background,
       grid: grid.visible, helper: camHelper.visible, body: camBody.visible,
     }
-    scene.fog = null
-    scene.background = new THREE.Color(0x000000)
-    grid.visible = camHelper.visible = camBody.visible = false
     const editorOnly = []
-    stage.traverse((o) => { if (o.userData?.editorOnly && o.visible) { o.visible = false; editorOnly.push(o) } })
-    scene.overrideMaterial = depthMat
-
     const frames = []
-    for (let i = 0; i < n; i++) {
-      poseAt(i / (n - 1), cam2)
-      cam2.updateMatrixWorld()
-      r2.render(scene, cam2)
-      frames.push(cv.toDataURL('image/png'))
+    try {
+      scene.fog = null
+      scene.background = new THREE.Color(0x000000)
+      grid.visible = camHelper.visible = camBody.visible = false
+      stage.traverse((o) => { if (o.userData?.editorOnly && o.visible) { o.visible = false; editorOnly.push(o) } })
+      scene.overrideMaterial = depthMat
+      for (let i = 0; i < n; i++) {
+        poseAt(i / (n - 1), depthCam)
+        depthCam.updateMatrixWorld()
+        depthR.render(scene, depthCam)
+        frames.push(cv.toDataURL('image/png'))
+      }
+    } finally {
+      // always hand the shared scene back to the live view intact
+      scene.overrideMaterial = null
+      editorOnly.forEach((o) => { o.visible = true })
+      scene.fog = restore.fog
+      scene.background = restore.bg
+      grid.visible = restore.grid
+      camHelper.visible = restore.helper
+      camBody.visible = restore.body
     }
-
-    scene.overrideMaterial = null
-    editorOnly.forEach((o) => { o.visible = true })
-    scene.fog = restore.fog
-    scene.background = restore.bg
-    grid.visible = restore.grid
-    camHelper.visible = restore.helper
-    camBody.visible = restore.body
-    r2.dispose()
     return frames
   }
 
@@ -489,6 +499,7 @@ export function createEngine(container, handlers = {}) {
       removeEventListener('keydown', onKeyDown)
       removeEventListener('keyup', onKeyUp)
       ws.sock?.close()
+      if (depthR) { depthR.forceContextLoss?.(); depthR.dispose() }
       renderer.dispose()
       renderer.domElement.remove()
     },
